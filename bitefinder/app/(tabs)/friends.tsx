@@ -14,6 +14,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/ui/IconSymbol";
+import { router } from "expo-router";
 
 // Data interfaces
 interface Friend {
@@ -247,10 +248,17 @@ export default function FriendsScreen() {
     setTimeout(() => {
       setIsLoading(false);
 
-      // Simulate successful join
-      Alert.alert("Success", "You've successfully joined the group!", [
-        { text: "OK", onPress: () => setGroupCode("") },
-      ]);
+      // Navigate to participant lobby screen with the group code
+      router.push({
+        pathname: "/restaurant/participant-lobby",
+        params: {
+          code: groupCode,
+          name: "Dinner Group", // This would come from the API in a real implementation
+        },
+      });
+
+      // Reset the group code input
+      setGroupCode("");
     }, 1000);
   };
 
