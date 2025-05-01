@@ -13,7 +13,7 @@ import {
   View,
   ScrollView,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -94,6 +94,9 @@ export default function GroupSelectionScreen() {
   const tintColor = useThemeColor({}, "tint");
   const textColor = useThemeColor({}, "text");
 
+  // Get group data from route params
+  const params = useLocalSearchParams();
+
   const [showMatchAnimation, setShowMatchAnimation] = useState(false);
   const matchScaleAnim = useRef(new Animated.Value(0.5)).current;
   const matchOpacityAnim = useRef(new Animated.Value(0)).current;
@@ -128,6 +131,21 @@ export default function GroupSelectionScreen() {
   const [currentUserId, setCurrentUserId] = useState("user1"); // Usuário atual simulado
   const [group, setGroup] = useState(MOCK_GROUP);
   const [position] = useState(new Animated.ValueXY());
+
+  // Add logging to debug
+  useEffect(() => {
+    console.log("Received params:", params);
+    if (params.group) {
+      try {
+        const parsedGroup = JSON.parse(params.group as string);
+        console.log("Parsed group data:", parsedGroup);
+        // Update group state with the parsed data
+        setGroup(parsedGroup);
+      } catch (error) {
+        console.error("Error parsing group data:", error);
+      }
+    }
+  }, [params]);
 
   // Configurar dados iniciais
   useEffect(() => {
@@ -184,13 +202,13 @@ export default function GroupSelectionScreen() {
               }),
             ]),
           ]).start();
-        }, 800); // Delay before showing match screen
+        }, 800);
 
         return;
       }
     }
   };
-  // New function to process group votes on a specific restaurant
+
   interface Restaurant {
     id: string;
     name: string;
@@ -499,7 +517,7 @@ export default function GroupSelectionScreen() {
             <ThemedView style={styles.matchBadge}>
               <Ionicons name="checkmark-circle" size={28} color="#4ECDC4" />
               <ThemedText type="title" style={styles.matchTitle}>
-                It's a match!
+                Its a match!
               </ThemedText>
             </ThemedView>
 
@@ -701,7 +719,7 @@ export default function GroupSelectionScreen() {
 
       <ThemedView style={styles.instructions}>
         <ThemedText style={styles.instructionsText}>
-          Swipe right if you like, left if you don't
+          Swipe right if you like, left if you dont
         </ThemedText>
       </ThemedView>
 
