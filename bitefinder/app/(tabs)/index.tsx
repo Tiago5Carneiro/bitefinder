@@ -1,75 +1,163 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Image } from "expo-image";
+import { StyleSheet, TouchableOpacity, Modal } from "react-native";
+import { router } from "expo-router";
+import { useState } from "react";
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import { useThemeColor } from "@/hooks/useThemeColor";
 
 export default function HomeScreen() {
+  const tintColor = useThemeColor({}, "tint");
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const handleFindRestaurant = () => {
+    setModalVisible(true);
+  };
+
+  const handleDiningChoice = (isGroup: boolean) => {
+    setModalVisible(false);
+    if (isGroup) {
+      router.push("/restaurant/group-selection");
+    } else {
+      router.push("/restaurant/solo-selection");
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
+    <ThemedView style={styles.container}>
+      <Image
+        source={require("@/assets/images/partial-react-logo.png")}
+        style={styles.logo}
+      />
+
+      <ThemedView style={styles.contentContainer}>
+        <ThemedText type="title" style={styles.title}>
+          BiteFinder️
         </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
+        <ThemedText style={styles.subtitle}>
+          Find your perfect dining experience
         </ThemedText>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: tintColor }]}
+          onPress={handleFindRestaurant}
+        >
+          <ThemedText style={styles.buttonText}>Find a Restaurant</ThemedText>
+        </TouchableOpacity>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <ThemedView style={styles.modalContainer}>
+          <ThemedView style={styles.modalContent}>
+            <ThemedText style={styles.modalTitle}>
+              How are you dining today?
+            </ThemedText>
+
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: tintColor }]}
+              onPress={() => handleDiningChoice(false)}
+            >
+              <ThemedText style={styles.buttonText}>Dining Solo</ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: tintColor }]}
+              onPress={() => handleDiningChoice(true)}
+            >
+              <ThemedText style={styles.buttonText}>
+                Dining with a Group
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <ThemedText style={styles.cancelText}>Cancel</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        </ThemedView>
+      </Modal>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  logo: {
+    width: "100%",
+    height: 200,
+    marginTop: 40,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  contentContainer: {
+    flex: 1,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "bold",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 40,
+  },
+  button: {
+    width: "80%",
+    height: 55,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    width: "80%",
+    padding: 20,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  modalButton: {
+    width: "100%",
+    height: 55,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  cancelButton: {
+    marginTop: 20,
+    padding: 10,
+  },
+  cancelText: {
+    fontSize: 16,
   },
 });
