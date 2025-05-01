@@ -21,13 +21,15 @@ def starting_mistral_client():
         base_url=api_base
     )
 
-
+def creating_embeddings(input):
     response = mistral_client.embeddings.create(
-        input="Hello world",
+        input=input,
         model="Linq-AI-Research/Linq-Embed-Mistral"
     )
 
     print(response.data[0].embedding)
+
+    return response
 
 def starting_gemini_client():
     from google import genai
@@ -35,8 +37,8 @@ def starting_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
     gemini_client = genai.Client(api_key=api_key)
 
-def text_from_image():
-    image = Image.open("Old_violin.jpg")
+def text_from_image(path):
+    image = Image.open(path)
     response = gemini_client.models.generate_content(
         model="gemini-2.0-flash",
         contents=[image, "Tell me about this instrument"]
