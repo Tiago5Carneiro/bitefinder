@@ -6,7 +6,7 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/ui/IconSymbol";
 
-// Properly typed interfaces
+// Data interfaces
 interface Friend {
     id: string;
     name: string;
@@ -25,7 +25,7 @@ interface User {
     username: string;
 }
 
-// New interface for the confirmation modal
+// Confirmation modal props interface
 interface ConfirmationModalProps {
   visible: boolean;
   title: string;
@@ -34,7 +34,7 @@ interface ConfirmationModalProps {
   onCancel: () => void;
 }
 
-// Hardcoded data for testing the UI
+// Mock data for testing UI
 const MOCK_FRIENDS: Friend[] = [
   { id: '1', name: 'Alice Johnson', username: '@alice_j' },
   { id: '2', name: 'Bob Smith', username: '@bobsmith' },
@@ -62,16 +62,19 @@ const ConfirmationModal = ({
   onConfirm,
   onCancel
 }: ConfirmationModalProps): React.ReactElement => {
+  // Theme colors
   const tintColor = useThemeColor({}, "tint");
   const backgroundColor = useThemeColor({}, "background");
   const textColor = useThemeColor({}, "text");
 
-  // Animation for modal appearance
+  // Animation state
   const [fadeAnim] = useState(new Animated.Value(0));
   const [scaleAnim] = useState(new Animated.Value(0.9));
   
+  // Animation effect when modal visibility changes
   useEffect(() => {
     if (visible) {
+      // Fade in and scale up when visible
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -85,6 +88,7 @@ const ConfirmationModal = ({
         })
       ]).start();
     } else {
+      // Fade out when hiding
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 100,
@@ -100,23 +104,31 @@ const ConfirmationModal = ({
       visible={visible}
       onRequestClose={onCancel}
     >
+      {/* Modal Background Overlay */}
       <Animated.View 
         style={[
           styles.modalOverlay,
           { opacity: fadeAnim }
         ]}
       >
+        {/* Modal Content Container with Animation */}
         <Animated.View
           style={{
             transform: [{ scale: scaleAnim }],
             width: '80%',
           }}
         >
+          {/* Modal Content */}
           <ThemedView style={styles.modalContainer}>
+            {/* Modal Title */}
             <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+            
+            {/* Modal Message */}
             <ThemedText style={styles.modalMessage}>{message}</ThemedText>
             
+            {/* Modal Action Buttons */}
             <View style={styles.modalButtons}>
+              {/* Cancel Button */}
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={onCancel}
@@ -124,6 +136,7 @@ const ConfirmationModal = ({
                 <ThemedText style={styles.buttonText}>Cancel</ThemedText>
               </TouchableOpacity>
               
+              {/* Confirm Button */}
               <TouchableOpacity
                 style={[styles.modalButton, styles.confirmButton, { backgroundColor: tintColor }]}
                 onPress={onConfirm}
@@ -139,10 +152,14 @@ const ConfirmationModal = ({
 };
 
 export default function FriendsScreen() {
+  // Authentication context
   const { user } = useAuth();
+  
+  // Theme colors
   const tintColor = useThemeColor({}, "tint");
   const textColor = useThemeColor({}, "text");
   
+  // State management for tabs and data
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search'>('friends');
   const [friends, setFriends] = useState<Friend[]>(MOCK_FRIENDS);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(MOCK_FRIEND_REQUESTS);
@@ -150,19 +167,20 @@ export default function FriendsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  // Tab transition animation
+  // Animation for tab transitions
   const [fadeAnim] = useState(new Animated.Value(1));
   
-  // Modal states
+  // Modal states for friend removal
   const [removeModalVisible, setRemoveModalVisible] = useState(false);
   const [friendToRemove, setFriendToRemove] = useState<Friend | null>(null);
   
-  // Accept friend request modal
+  // Modal states for friend request acceptance
   const [acceptModalVisible, setAcceptModalVisible] = useState(false);
   const [requestToAccept, setRequestToAccept] = useState<FriendRequest | null>(null);
 
-  // Handle tab changes with animation
+  // Tab change handler with animation
   const changeTab = (tab: 'friends' | 'requests' | 'search') => {
+    // Animate tab transition
     Animated.sequence([
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -177,12 +195,13 @@ export default function FriendsScreen() {
       })
     ]).start();
     
+    // Change tab after fade out animation
     setTimeout(() => {
       setActiveTab(tab);
     }, 150);
   };
 
-  // Mock search function - properly typed
+  // User search function
   const searchUsers = (): void => {
     if (!searchQuery.trim()) return;
     
@@ -199,19 +218,20 @@ export default function FriendsScreen() {
     }, 500);
   };
 
-  // Mock friend actions - properly typed
+  // Friend request sending function
   const sendFriendRequest = (recipientId: string): void => {
     Alert.alert("Success", "Friend request sent!");
     // Remove from search results to simulate the request was sent
     setSearchResults(prev => prev.filter(mockUser => mockUser.id !== recipientId));
   };
 
-  // Functions to handle friend request acceptance with confirmation
+  // Friend request acceptance handler - opens confirmation modal
   const promptAcceptFriendRequest = (request: FriendRequest): void => {
     setRequestToAccept(request);
     setAcceptModalVisible(true);
   };
 
+  // Confirm friend request acceptance
   const confirmAcceptFriendRequest = (): void => {
     if (requestToAccept) {
       // Move from requests to friends
@@ -227,23 +247,26 @@ export default function FriendsScreen() {
     }
   };
 
+  // Cancel friend request acceptance
   const cancelAcceptFriendRequest = (): void => {
     setAcceptModalVisible(false);
     setRequestToAccept(null);
   };
 
+  // Reject friend request handler
   const rejectFriendRequest = (senderId: string): void => {
     // Remove from requests
     setFriendRequests(prev => prev.filter(req => req.id !== senderId));
     Alert.alert("Success", "Friend request rejected");
   };
 
-  // Functions to handle friend removal with confirmation
+  // Friend removal handler - opens confirmation modal
   const promptRemoveFriend = (friend: Friend): void => {
     setFriendToRemove(friend);
     setRemoveModalVisible(true);
   };
 
+  // Confirm friend removal
   const confirmRemoveFriend = (): void => {
     if (friendToRemove) {
       // Remove from friends list
@@ -258,19 +281,22 @@ export default function FriendsScreen() {
     }
   };
 
+  // Cancel friend removal
   const cancelRemoveFriend = (): void => {
     setRemoveModalVisible(false);
     setFriendToRemove(null);
   };
 
-  // Rendering functions - properly typed
+  // Render friend list item
   const renderFriendItem = ({ item }: { item: Friend }): React.ReactElement => (
     <ThemedView style={styles.card}>
+      {/* Friend Info */}
       <ThemedView style={styles.userInfo}>
         <ThemedText style={styles.userUsername}>{item.username}</ThemedText>
         <ThemedText style={styles.userName}>{item.name || "No name"}</ThemedText>
       </ThemedView>
       
+      {/* Remove Friend Button */}
       <TouchableOpacity
         style={[styles.iconButton, styles.removeButton]}
         onPress={() => promptRemoveFriend(item)}
@@ -280,14 +306,18 @@ export default function FriendsScreen() {
     </ThemedView>
   );
 
+  // Render friend request list item
   const renderRequestItem = ({ item }: { item: FriendRequest }): React.ReactElement => (
     <ThemedView style={styles.card}>
+      {/* Request User Info */}
       <ThemedView style={styles.userInfo}>
         <ThemedText style={styles.userUsername}>{item.username}</ThemedText>
         <ThemedText style={styles.userName}>{item.name || "No name"}</ThemedText>
       </ThemedView>
       
+      {/* Request Action Buttons */}
       <ThemedView style={styles.actionButtons}>
+        {/* Accept Request Button */}
         <TouchableOpacity
           style={[styles.iconButton, styles.acceptButton]}
           onPress={() => promptAcceptFriendRequest(item)}
@@ -295,6 +325,7 @@ export default function FriendsScreen() {
           <IconSymbol name="right" size={20} color="white" />
         </TouchableOpacity>
         
+        {/* Reject Request Button */}
         <TouchableOpacity
           style={[styles.iconButton, styles.removeButton]}
           onPress={() => rejectFriendRequest(item.id)}
@@ -305,13 +336,16 @@ export default function FriendsScreen() {
     </ThemedView>
   );
   
+  // Render search result list item
   const renderSearchResultItem = ({ item }: { item: User }): React.ReactElement => (
     <ThemedView style={styles.card}>
+      {/* Search Result User Info */}
       <ThemedView style={styles.userInfo}>
         <ThemedText style={styles.userUsername}>{item.username}</ThemedText>
         <ThemedText style={styles.userName}>{item.name || "No name"}</ThemedText>
       </ThemedView>
       
+      {/* Add Friend Button */}
       <TouchableOpacity
         style={[styles.iconButton, { backgroundColor: tintColor }]}
         onPress={() => sendFriendRequest(item.id)}
@@ -323,11 +357,14 @@ export default function FriendsScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Screen Title */}
       <ThemedText type="title" style={styles.title}>
         Friends
       </ThemedText>
 
+      {/* Tab Navigation Bar */}
       <ThemedView style={styles.tabBar}>
+        {/* Friends Tab */}
         <TouchableOpacity
           style={[
             styles.tab,
@@ -343,6 +380,7 @@ export default function FriendsScreen() {
           </ThemedText>
         </TouchableOpacity>
 
+        {/* Friend Requests Tab */}
         <TouchableOpacity
           style={[
             styles.tab,
@@ -358,6 +396,7 @@ export default function FriendsScreen() {
           </ThemedText>
         </TouchableOpacity>
 
+        {/* Add Friends Tab */}
         <TouchableOpacity
           style={[
             styles.tab,
@@ -374,9 +413,12 @@ export default function FriendsScreen() {
         </TouchableOpacity>
       </ThemedView>
 
+      {/* Content Container with Animation */}
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        {/* Search Bar (only on search tab) */}
         {activeTab === 'search' && (
           <ThemedView style={styles.searchContainer}>
+            {/* Search Input */}
             <TextInput
               style={[styles.searchInput, { color: textColor, borderColor: textColor + '40' }]}
               placeholder="Search by name or username"
@@ -386,6 +428,7 @@ export default function FriendsScreen() {
               returnKeyType="search"
               onSubmitEditing={searchUsers}
             />
+            {/* Search Button */}
             <TouchableOpacity
               style={[styles.searchButton, { backgroundColor: tintColor }]}
               onPress={searchUsers}
@@ -396,6 +439,7 @@ export default function FriendsScreen() {
           </ThemedView>
         )}
 
+        {/* Friends List (friends tab) */}
         {activeTab === 'friends' && (
           <FlatList
             data={friends}
@@ -410,6 +454,7 @@ export default function FriendsScreen() {
           />
         )}
 
+        {/* Friend Requests List (requests tab) */}
         {activeTab === 'requests' && (
           <FlatList
             data={friendRequests}
@@ -424,6 +469,7 @@ export default function FriendsScreen() {
           />
         )}
 
+        {/* Search Results List (search tab) */}
         {activeTab === 'search' && (
           <FlatList
             data={searchResults}
@@ -461,6 +507,7 @@ export default function FriendsScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Container styles
   container: {
     flex: 1,
     padding: 20,
@@ -470,6 +517,8 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     textAlign: "center",
   },
+  
+  // Tab navigation styles
   tabBar: {
     flexDirection: 'row',
     marginBottom: 20,
@@ -485,6 +534,8 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 14,
   },
+  
+  // Search component styles
   searchContainer: {
     flexDirection: 'row',
     marginBottom: 20,
@@ -504,9 +555,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
   },
+  
+  // List styles
   listContent: {
     paddingBottom: 20,
   },
+  
+  // Card styles for list items
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,6 +589,8 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+  
+  // Action button styles
   actionButtons: {
     flexDirection: 'row',
   },
@@ -551,6 +608,8 @@ const styles = StyleSheet.create({
   removeButton: {
     backgroundColor: '#F44336',
   },
+  
+  // Empty state text
   emptyText: {
     textAlign: 'center',
     marginTop: 40,
