@@ -68,6 +68,7 @@ function RootLayoutContent() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)" />
+        <Stack.Screen name="restaurant"/>
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
