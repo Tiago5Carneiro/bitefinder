@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import React from "react";
-import { Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { HapticTab } from "@/components/HapticTab";
 import { IconSymbol } from "@/components/ui/IconSymbol";
@@ -18,33 +19,69 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
+        tabBarShowLabel: false,
         tabBarStyle: Platform.select({
           ios: {
-            // Use a transparent background on iOS to show the blur effect
             position: "absolute",
+            height: 70,
           },
-          default: {},
+          default: {
+            height: 60,
+          },
         }),
+        animation: "fade",
+        tabBarIconStyle: {
+          marginBottom: 0,
+        },
+        tabBarHideOnKeyboard: true,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Animated.View 
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(300)}
+            >
+              <IconSymbol size={32} name="house.fill" color={color} />
+            </Animated.View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="friends"
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Animated.View 
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(300)}
+            >
+              <IconSymbol size={32} name="person.2.fill" color={color} />
+            </Animated.View>
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="person.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Animated.View 
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(300)}
+            >
+              <IconSymbol size={32} name="person.fill" color={color} />
+            </Animated.View>
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

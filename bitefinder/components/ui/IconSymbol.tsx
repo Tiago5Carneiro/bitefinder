@@ -21,7 +21,10 @@ const MAPPING = {
   "paperplane.fill": "send",
   "chevron.left.forwardslash.chevron.right": "code",
   "chevron.right": "chevron-right",
-  "person.fill": "person", // Add this line
+  "person.fill": "person",
+  "person.2.fill": "people-alt",
+  "right": "check",
+  "xmark": "clear",
 } as IconMapping;
 
 /**
