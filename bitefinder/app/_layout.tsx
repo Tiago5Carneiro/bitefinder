@@ -8,6 +8,7 @@ import { SplashScreen, Stack, useSegments, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import "react-native-reanimated";
+import { StyleSheet } from "react-native";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -57,7 +58,14 @@ function RootLayoutContent() {
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <ProtectedRouteGuard />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack 
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade_from_bottom',
+          animationDuration: 300,
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)" />
       </Stack>
