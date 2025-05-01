@@ -45,12 +45,14 @@ export default function DiningOptionsScreen() {
   }, []);
 
   const handleOptionSelection = (option: "solo" | "date" | "group") => {
-    let pathname = "/restaurant/solo-selection";
+    let pathname: "/restaurant/solo-selection" | "/restaurant/group-selection";
 
     if (option === "date") {
       pathname = "/restaurant/group-selection";
     } else if (option === "group") {
       pathname = "/restaurant/group-selection";
+    } else {
+      pathname = "/restaurant/solo-selection";
     }
 
     router.push({ pathname });
