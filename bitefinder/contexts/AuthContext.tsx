@@ -6,11 +6,12 @@ import {
   ReactNode,
 } from "react";
 import { router } from "expo-router";
-// For a real app, you would use SecureStore to store tokens
-// import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_URL = "http://localhost:5000/"; // Use your server IP address
 
 type User = {
-  id: string;
+  username: string;
   name: string;
   email: string;
 };
@@ -18,8 +19,13 @@ type User = {
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<void>;
+  signUp: (
+    username: string,
+    name: string,
+    email: string,
+    password: string
+  ) => Promise<void>;
   signOut: () => void;
 };
 
@@ -31,23 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if user is logged in on initial load
   useEffect(() => {
-    // Check if token exists in storage
     const loadToken = async () => {
       try {
-        // In a real app, retrieve token from SecureStore
-        // const token = await SecureStore.getItemAsync('userToken');
-        const token = null; // Simulate no token for now
+        const token = await AsyncStorage.getItem("userToken");
+        const userDataString = await AsyncStorage.getItem("userData");
 
-        if (token) {
-          // If token exists, fetch user data
-          // const userData = await fetchUserData(token);
-          // setUser(userData);
-          // For demo purposes
-          setUser({
-            id: "1",
-            name: "Demo User",
-            email: "user@example.com",
-          });
+        if (token && userDataString) {
+          const userData = JSON.parse(userDataString);
+          setUser(userData);
         }
       } catch (error) {
         console.error("Failed to load auth token", error);
@@ -60,49 +57,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Sign in function
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      // Make API request to sign in
-      // const response = await api.post('/login', { email, password });
-      // const { token, user } = response.data;
+      const response = await fetch(`${API_URL}/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-      // For demo purposes
-      const user = {
-        id: "1",
-        name: "Demo User",
-        email: email,
-      };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Login failed");
+      }
 
-      // Store token
-      // await SecureStore.setItemAsync('userToken', token);
+      const data = await response.json();
+
+      // Store token and user data
+      await AsyncStorage.setItem("userToken", data.token);
+      await AsyncStorage.setItem("userData", JSON.stringify(data.user));
 
       // Update state
-      setUser(user);
+      setUser(data.user);
 
       // Navigate to main app
       router.replace("/(tabs)");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sign in failed", error);
-      throw error;
+      throw new Error(error.message || "Sign in failed");
     } finally {
       setIsLoading(false);
     }
   };
 
   // Sign up function
-  const signUp = async (name: string, email: string, password: string) => {
+  const signUp = async (
+    username: string,
+    name: string,
+    email: string,
+    password: string
+  ) => {
     setIsLoading(true);
     try {
-      // Make API request to register
-      // const response = await api.post('/register', { name, email, password });
-      console.log("Registered user:", { name, email });
+      const response = await fetch(`${API_URL}/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, name, email, password }),
+      });
 
-      // Usually you would redirect to login or automatically sign in the user
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Registration failed");
+      }
+
+      // Redirect to login
       router.replace("/(auth)/login");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sign up failed", error);
-      throw error;
+      throw new Error(error.message || "Registration failed");
     } finally {
       setIsLoading(false);
     }
@@ -111,8 +127,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sign out function
   const signOut = async () => {
     try {
-      // Clear token from storage
-      // await SecureStore.deleteItemAsync('userToken');
+      // Clear tokens from storage
+      await AsyncStorage.removeItem("userToken");
+      await AsyncStorage.removeItem("userData");
 
       // Update state
       setUser(null);
