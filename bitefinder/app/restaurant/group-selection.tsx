@@ -11,8 +11,9 @@ import {
   StatusBar,
   Easing,
   View,
+  ScrollView,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -93,6 +94,9 @@ export default function GroupSelectionScreen() {
   const tintColor = useThemeColor({}, "tint");
   const textColor = useThemeColor({}, "text");
 
+  // Get group data from route params
+  const params = useLocalSearchParams();
+
   const [showMatchAnimation, setShowMatchAnimation] = useState(false);
   const matchScaleAnim = useRef(new Animated.Value(0.5)).current;
   const matchOpacityAnim = useRef(new Animated.Value(0)).current;
@@ -100,6 +104,8 @@ export default function GroupSelectionScreen() {
 
   const [likedRestaurantIds, setLikedRestaurantIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+
   const [restaurants, setRestaurants] = useState<
     {
       id: string;
@@ -126,6 +132,21 @@ export default function GroupSelectionScreen() {
   const [group, setGroup] = useState(MOCK_GROUP);
   const [position] = useState(new Animated.ValueXY());
 
+  // Add logging to debug
+  useEffect(() => {
+    console.log("Received params:", params);
+    if (params.group) {
+      try {
+        const parsedGroup = JSON.parse(params.group as string);
+        console.log("Parsed group data:", parsedGroup);
+        // Update group state with the parsed data
+        setGroup(parsedGroup);
+      } catch (error) {
+        console.error("Error parsing group data:", error);
+      }
+    }
+  }, [params]);
+
   // Configurar dados iniciais
   useEffect(() => {
     // Simular carregamento de dados
@@ -139,6 +160,14 @@ export default function GroupSelectionScreen() {
   useEffect(() => {
     checkForMatches();
   }, [restaurants]);
+
+  const toggleCardExpansion = (restaurantId: string) => {
+    if (expandedCardId === restaurantId) {
+      setExpandedCardId(null);
+    } else {
+      setExpandedCardId(restaurantId);
+    }
+  };
 
   // Verificar se algum restaurante tem likes de todos os membros do grupo
   const checkForMatches = () => {
@@ -173,13 +202,13 @@ export default function GroupSelectionScreen() {
               }),
             ]),
           ]).start();
-        }, 800); // Delay before showing match screen
+        }, 800);
 
         return;
       }
     }
   };
-  // New function to process group votes on a specific restaurant
+
   interface Restaurant {
     id: string;
     name: string;
@@ -488,7 +517,7 @@ export default function GroupSelectionScreen() {
             <ThemedView style={styles.matchBadge}>
               <Ionicons name="checkmark-circle" size={28} color="#4ECDC4" />
               <ThemedText type="title" style={styles.matchTitle}>
-                It's a match!
+                Its a match!
               </ThemedText>
             </ThemedView>
 
@@ -690,111 +719,222 @@ export default function GroupSelectionScreen() {
 
       <ThemedView style={styles.instructions}>
         <ThemedText style={styles.instructionsText}>
-          Swipe right if you like, left if you don't
+          Swipe right if you like, left if you dont
         </ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.cardContainer}>
         {restaurants.map((restaurant, index) => {
           if (index === 0) {
+            const isExpanded = expandedCardId === restaurant.id;
+
             return (
               <Animated.View
                 key={restaurant.id}
-                style={[styles.card, cardStyle]}
+                style={[
+                  styles.card,
+                  cardStyle,
+                  isExpanded && { height: SCREEN_HEIGHT * 0.75 },
+                ]}
                 {...panResponder.panHandlers}
               >
-                <Image
-                  source={{ uri: restaurant.image }}
-                  style={styles.cardImage}
-                />
-
-                <Animated.View
-                  style={[styles.likeContainer, { opacity: likeOpacity }]}
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ flexGrow: 1 }}
+                  showsVerticalScrollIndicator={false}
                 >
-                  <ThemedText style={styles.likeText}>LIKE</ThemedText>
-                </Animated.View>
-
-                <Animated.View
-                  style={[styles.nopeContainer, { opacity: nopeOpacity }]}
-                >
-                  <ThemedText style={styles.nopeText}>NOPE</ThemedText>
-                </Animated.View>
-
-                <ThemedView style={styles.cardInfo}>
-                  <ThemedView style={styles.cardHeader}>
-                    <ThemedText type="title" style={styles.restaurantName}>
-                      {restaurant.name}
-                    </ThemedText>
-                    <ThemedView style={styles.ratingBadge}>
-                      <Ionicons name="star" size={16} color="#fff" />
-                      <ThemedText style={styles.ratingText}>
-                        {restaurant.rating}
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => toggleCardExpansion(restaurant.id)}
+                  >
+                    <Image
+                      source={{ uri: restaurant.image }}
+                      style={styles.cardImage}
+                    />
+                    {/* Image overlay hint */}
+                    <ThemedView style={styles.imageOverlay}>
+                      <Ionicons
+                        name={isExpanded ? "chevron-up" : "chevron-down"}
+                        size={24}
+                        color="white"
+                      />
+                      <ThemedText style={styles.imageOverlayText}>
+                        {isExpanded ? "Show less" : "Tap for details"}
                       </ThemedText>
                     </ThemedView>
-                  </ThemedView>
+                  </TouchableOpacity>
 
-                  <ThemedView style={styles.detailsContainer}>
-                    <ThemedView style={styles.detailItem}>
-                      <Ionicons
-                        name="restaurant-outline"
-                        size={16}
-                        color={textColor}
-                        style={styles.detailIcon}
-                      />
-                      <ThemedText>{restaurant.cuisine}</ThemedText>
-                    </ThemedView>
-                    <ThemedView style={styles.detailItem}>
-                      <Ionicons
-                        name="cash-outline"
-                        size={16}
-                        color={textColor}
-                        style={styles.detailIcon}
-                      />
-                      <ThemedText>{restaurant.priceRange}</ThemedText>
-                    </ThemedView>
-                    <ThemedView style={styles.detailItem}>
-                      <Ionicons
-                        name="location-outline"
-                        size={16}
-                        color={textColor}
-                        style={styles.detailIcon}
-                      />
-                      <ThemedText>{restaurant.distance}</ThemedText>
-                    </ThemedView>
-                  </ThemedView>
+                  <Animated.View
+                    style={[styles.likeContainer, { opacity: likeOpacity }]}
+                  >
+                    <ThemedText style={styles.likeText}>LIKE</ThemedText>
+                  </Animated.View>
 
-                  {restaurant.likes.length > 0 && (
-                    <ThemedView style={styles.likesContainer}>
-                      <ThemedView style={styles.likesRow}>
-                        <Ionicons
-                          name="heart"
-                          size={16}
-                          color="#FF6B6B"
-                          style={{ marginRight: 6 }}
-                        />
-                        <ThemedText style={styles.likesText}>
-                          {restaurant.likes.length}/{group.members.length} group
-                          votes
+                  <Animated.View
+                    style={[styles.nopeContainer, { opacity: nopeOpacity }]}
+                  >
+                    <ThemedText style={styles.nopeText}>NOPE</ThemedText>
+                  </Animated.View>
+
+                  <ThemedView style={styles.cardInfo}>
+                    <ThemedView style={styles.cardHeader}>
+                      <ThemedText type="title" style={styles.restaurantName}>
+                        {restaurant.name}
+                      </ThemedText>
+                      <ThemedView style={styles.ratingBadge}>
+                        <Ionicons name="star" size={16} color="#fff" />
+                        <ThemedText style={styles.ratingText}>
+                          {restaurant.rating}
                         </ThemedText>
                       </ThemedView>
-                      <ThemedView style={styles.progressMiniBar}>
-                        <ThemedView
-                          style={[
-                            styles.progressMiniFill,
-                            {
-                              width: `${
-                                (restaurant.likes.length /
-                                  group.members.length) *
-                                100
-                              }%`,
-                              backgroundColor: "#FF6B6B",
-                            },
-                          ]}
+                    </ThemedView>
+
+                    <ThemedView style={styles.detailsContainer}>
+                      <ThemedView style={styles.detailItem}>
+                        <Ionicons
+                          name="restaurant-outline"
+                          size={16}
+                          color={textColor}
+                          style={styles.detailIcon}
                         />
+                        <ThemedText>{restaurant.cuisine}</ThemedText>
+                      </ThemedView>
+                      <ThemedView style={styles.detailItem}>
+                        <Ionicons
+                          name="cash-outline"
+                          size={16}
+                          color={textColor}
+                          style={styles.detailIcon}
+                        />
+                        <ThemedText>{restaurant.priceRange}</ThemedText>
+                      </ThemedView>
+                      <ThemedView style={styles.detailItem}>
+                        <Ionicons
+                          name="location-outline"
+                          size={16}
+                          color={textColor}
+                          style={styles.detailIcon}
+                        />
+                        <ThemedText>{restaurant.distance}</ThemedText>
                       </ThemedView>
                     </ThemedView>
-                  )}
-                </ThemedView>
+
+                    {restaurant.likes.length > 0 && (
+                      <ThemedView style={styles.likesContainer}>
+                        <ThemedView style={styles.likesRow}>
+                          <Ionicons
+                            name="heart"
+                            size={16}
+                            color="#FF6B6B"
+                            style={{ marginRight: 6 }}
+                          />
+                          <ThemedText style={styles.likesText}>
+                            {restaurant.likes.length}/{group.members.length}{" "}
+                            group votes
+                          </ThemedText>
+                        </ThemedView>
+                        <ThemedView style={styles.progressMiniBar}>
+                          <ThemedView
+                            style={[
+                              styles.progressMiniFill,
+                              {
+                                width: `${
+                                  (restaurant.likes.length /
+                                    group.members.length) *
+                                  100
+                                }%`,
+                                backgroundColor: "#FF6B6B",
+                              },
+                            ]}
+                          />
+                        </ThemedView>
+                      </ThemedView>
+                    )}
+
+                    {/* Extended content */}
+                    {isExpanded && (
+                      <ThemedView style={styles.expandedContent}>
+                        <ThemedView style={styles.divider} />
+
+                        <ThemedText style={styles.sectionTitle}>
+                          Open Hours
+                        </ThemedText>
+                        <ThemedView style={styles.hoursContainer}>
+                          <ThemedView style={styles.hourRow}>
+                            <ThemedText style={styles.dayText}>
+                              Mon-Fri
+                            </ThemedText>
+                            <ThemedText style={styles.timeText}>
+                              11:00 AM - 10:00 PM
+                            </ThemedText>
+                          </ThemedView>
+                          <ThemedView style={styles.hourRow}>
+                            <ThemedText style={styles.dayText}>
+                              Sat-Sun
+                            </ThemedText>
+                            <ThemedText style={styles.timeText}>
+                              10:00 AM - 11:00 PM
+                            </ThemedText>
+                          </ThemedView>
+                        </ThemedView>
+
+                        <ThemedText style={styles.sectionTitle}>
+                          Popular Dishes
+                        </ThemedText>
+                        <ThemedView style={styles.dishesContainer}>
+                          {["Signature Pasta", "Garlic Bread", "Tiramisu"].map(
+                            (dish, i) => (
+                              <ThemedView key={i} style={styles.dishItem}>
+                                <Ionicons
+                                  name="restaurant"
+                                  size={14}
+                                  color={textColor}
+                                  style={{ marginRight: 6, opacity: 0.6 }}
+                                />
+                                <ThemedText style={styles.dishText}>
+                                  {dish}
+                                </ThemedText>
+                              </ThemedView>
+                            )
+                          )}
+                        </ThemedView>
+
+                        <ThemedText style={styles.sectionTitle}>
+                          Additional Info
+                        </ThemedText>
+                        <ThemedView style={styles.additionalInfoContainer}>
+                          <ThemedView style={styles.infoItem}>
+                            <Ionicons
+                              name="wifi"
+                              size={16}
+                              color={textColor}
+                              style={{ marginRight: 8, opacity: 0.7 }}
+                            />
+                            <ThemedText>Free WiFi</ThemedText>
+                          </ThemedView>
+                          <ThemedView style={styles.infoItem}>
+                            <Ionicons
+                              name="card"
+                              size={16}
+                              color={textColor}
+                              style={{ marginRight: 8, opacity: 0.7 }}
+                            />
+                            <ThemedText>Accepts Credit Cards</ThemedText>
+                          </ThemedView>
+                          <ThemedView style={styles.infoItem}>
+                            <Ionicons
+                              name="car"
+                              size={16}
+                              color={textColor}
+                              style={{ marginRight: 8, opacity: 0.7 }}
+                            />
+                            <ThemedText>Parking Available</ThemedText>
+                          </ThemedView>
+                        </ThemedView>
+                      </ThemedView>
+                    )}
+                  </ThemedView>
+                </ScrollView>
               </Animated.View>
             );
           }
@@ -846,6 +986,96 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+
+  imageOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    padding: 10,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  imageOverlayText: {
+    color: "white",
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  expandedContent: {
+    marginTop: 5,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(150, 150, 150, 0.2)",
+    marginVertical: 10,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  hoursContainer: {
+    marginBottom: 16,
+  },
+  hourRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  dayText: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  timeText: {
+    fontSize: 14,
+  },
+  dishesContainer: {
+    marginBottom: 16,
+  },
+  dishItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  dishText: {
+    fontSize: 14,
+  },
+  additionalInfoContainer: {
+    marginBottom: 10,
+  },
+  infoItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  // Update the cardImage style
+  cardImage: {
+    width: "100%",
+    height: SCREEN_HEIGHT * 0.3,
+  },
+
+  // Update existing card style to handle overflow
+  card: {
+    position: "absolute",
+    width: SCREEN_WIDTH * 0.9,
+    height: SCREEN_HEIGHT * 0.65,
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+    backgroundColor: "white",
+  },
+  cardInfo: {
+    padding: 20,
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -871,6 +1101,19 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "600",
+  },
+
+  expandButtonContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  expandButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    opacity: 0.8,
   },
   backButton: {
     padding: 8,
@@ -926,32 +1169,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 10,
   },
-  card: {
-    position: "absolute",
-    width: SCREEN_WIDTH * 0.9,
-    height: SCREEN_HEIGHT * 0.65,
-    borderRadius: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
-    overflow: "hidden",
-    backgroundColor: "white",
-  },
+
   backgroundCard: {
     top: 10,
     zIndex: -1,
     opacity: 0.8,
     transform: [{ scale: 0.95 }],
-  },
-  cardImage: {
-    width: "100%",
-    height: "65%",
-  },
-  cardInfo: {
-    padding: 20,
-    flex: 1,
   },
   cardHeader: {
     flexDirection: "row",
