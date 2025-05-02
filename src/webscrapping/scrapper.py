@@ -25,13 +25,34 @@ def sample_get_place(api_key_string):
     restriction = places_v1.SearchNearbyRequest.LocationRestriction()
     restriction.circle = circle
 
+    places_v1.Place()
+
     # Initialize request argument(s)
     request = places_v1.SearchNearbyRequest(location_restriction = restriction,included_types=["restaurant"])
 
     # Make the request
-    response = client.search_nearby(request=request, metadata=[("x-goog-fieldmask", "places.displayName,places.photos,places.priceRange,places.priceLevel,places.rating,places.location,places.googleMapsUri")])
+    resp_dic = {}
+    response = client.search_nearby(request=request, metadata=[("x-goog-fieldmask", "places.displayName,places.photos,places.priceRange,places.priceLevel,places.rating,places.googleMapsUri,places.primaryType,places.id")])
+
+    place_list = []
+
+    for place in response.places:
+        photo_list = []
+
+        for p in place.photos:
+            photo_req = places_v1.GetPhotoMediaRequest(name=p.name + "/media",max_height_px = p.height_px)
+            photo_resp = client.get_photo_media(request = photo_req)
+            photo_list.append(photo_resp.photo_uri)
+
+        resp_dic[place.id] = {"displayName": place.display_name.text,
+                              "priceRange": {"start": place.price_range.start_price.units, "end": place.price_range.end_price.units},
+                              "priceLevel": place.price_level,
+                              "rating": place.rating,
+                              "mapsURI": place.google_maps_uri,
+                              "photos": photo_list,
+                              "primaryType": place.primary_type}
 
     # Handle the response
-    return response
+    return resp_dic
 
-#sample_get_place("AIzaSyCFKZFyqSQINfoC-UoYoND9WN2f45HVz1A")
+print(sample_get_place("AIzaSyCFKZFyqSQINfoC-UoYoND9WN2f45HVz1A"))
