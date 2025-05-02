@@ -73,7 +73,35 @@ def init_db():
             restaurant_id VARCHAR(100) PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             rating FLOAT NOT NULL,
-            url_location VARCHAR(255) NOT NULL
+            url_location VARCHAR(255) NOT NULL,
+            food_vector VECTOR(4096),
+            place_vector VECTOR(4096),
+            price_range_max INT NOT NULL,
+            price_range_min INT NOT NULL,
+            price_level INT NOT NULL,
+            type VARCHAR(100) NOT NULL,
+            reservable BOOLEAN NOT NULL,
+            vegetarian BOOLEAN NOT NULL,
+            summary VARCHAR(500) NOT NULL,
+        )
+        ''')
+
+        # Create Scheduale table 
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scheduale (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            end VARCHAR(20) NOT NULL,
+            start VARCHAR(20) NOT NULL,
+            day VARCHAR(10) NOT NULL,
+            restaurant_id VARCHAR(100) NOT NULL, 
+        )
+        ''')
+
+        # Create photo table 
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS photo (
+            url VARCHAR(200) PRIMARY KEY,
+            restaurant_id VARCHAR(100) NOT NULL
         )
         ''')
         
