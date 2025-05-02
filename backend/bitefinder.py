@@ -139,12 +139,12 @@ def init_db():
         )
         ''')
         
-        # Create restaurant_image table
+        # Create user_preference table
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS restaurant_image (
-            restaurant_id INT,
-            image_url VARCHAR(255),
-            PRIMARY KEY (restaurant_id, image_url)
+        CREATE TABLE IF NOT EXISTS user_preference (
+            user_id INT,
+            preference VARCHAR(100),
+            PRIMARY KEY (user_id,preference)
         )
         ''')
         
