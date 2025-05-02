@@ -72,10 +72,11 @@ def gemini_generate_text(prompt):
 
 def text_from_user_food_preferences(preferences):
     prompt = f"""
-    You are a helpful assistant that can analyze food preferences.
-    Here is a list of food preferences: {preferences}
-    I want you to give me a brief description (between 50 to 100) of this food's style,
-    mood, colourfulness and vibe.
+    You are a perceptive and imaginative assistant that transforms food preferences into vivid, sensory-rich descriptions.
+    
+    Based on the following user preferences: {preferences}
+    
+    Write a short, evocative description (between 50 and 100 words) that brings a dish to life. Describe the food’s style (e.g., rustic, gourmet, playful), its mood and vibe (e.g., comforting, bold, elegant), and its colourfulness and texture. Use expressive, flavorful language—as if writing for a food magazine or setting the scene in a culinary story.
     """
     response = gemini_generate_text(prompt)
 
@@ -83,11 +84,13 @@ def text_from_user_food_preferences(preferences):
 
 def text_from_user_restaurant_preferences(preferences):
     prompt = f"""
-    You are a helpful assistant that can analyze restaurant preferences.
-    Here is a list of restaurant preferences: {preferences}
-    I want you to give me a brief description (between 50 to 100) of this restaurant's style,
-    colour theme, mood and vibe.
+    You are a helpful and imaginative assistant that interprets restaurant preferences and transforms them into vivid descriptions.
+    
+    Based on the following user preferences: {preferences}
+    
+    Write a concise and evocative description (between 50 and 100 words) that captures the restaurant’s style, colour theme, mood, and overall vibe. Use rich, sensory language to bring the atmosphere to life, as if describing the setting of a scene in a novel.
     """
+
     response = gemini_generate_text(prompt)
 
     return response.text
@@ -122,8 +125,9 @@ def detect_image_type(image):
 
 def text_from_restaurant_image(image):
     prompt ="""
-    Here is an image of a restaurant, I want you to give me a brief description (between 50 to 100) of this restaurants style,
-    colour theme, mood and vibe.
+You will be shown an image of a restaurant. Based on the visual elements in the image, provide a concise description 
+(between 50 and 100 words) that captures the restaurant’s style, colour palette, overall mood, and atmosphere or vibe. 
+Focus on architectural and decorative details, lighting, furniture, and any other cues that help convey its character.
     """
     response = gemini_generate_text_from_image(image,prompt)
 
@@ -131,8 +135,9 @@ def text_from_restaurant_image(image):
 
 def text_from_food_image(image):
     prompt ="""
-    Here is an image of a menu item, I want you to give me a brief description (between 50 to 100) of this food's style,
-    , mood, colourfullness and vibe.
+Look closely at this image of a menu item and craft a vivid, sensory-rich description (50–100 words). 
+Describe the food’s style—is it rustic, gourmet, street-style, or avant-garde? Reflect on its mood and personality—playful, elegant, comforting, bold? 
+Comment on its colourfulness, texture, and overall vibe, as if you're painting a picture with words for someone who’s never seen or tasted it. Make the dish come alive through your description.
     """
     response = gemini_generate_text_from_image(image,prompt)
 
