@@ -32,6 +32,8 @@ export default function GroupLobbyScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isHost, setIsHost] = useState(false);
   const [allReady, setAllReady] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const tintColor = useThemeColor({}, "tint");
   const backgroundColor = useThemeColor({}, "background");
@@ -68,13 +70,6 @@ export default function GroupLobbyScreen() {
 
     loadUserData();
     fetchGroupMembers();
-
-    // Poll for updates every 5 seconds
-    const interval = setInterval(() => {
-      fetchGroupMembers();
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [groupCode]);
 
   const fetchGroupMembers = async () => {
@@ -104,6 +99,14 @@ export default function GroupLobbyScreen() {
           (member: Member) => member.is_ready
         );
         setAllReady(allMembersReady && data.members.length > 0);
+
+        // Update current user's ready status
+        const currentMember = data.members.find(
+          (m: Member) => m.username === currentUser?.username
+        );
+        if (currentMember) {
+          setIsReady(currentMember.is_ready || false);
+        }
       } else {
         const errorData = await response.json();
         Alert.alert(
@@ -116,6 +119,56 @@ export default function GroupLobbyScreen() {
       Alert.alert("Error", "Failed to fetch group members. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Toggle ready status for host
+  const toggleReadyStatus = async () => {
+    try {
+      setUpdatingStatus(true);
+      const userToken = await AsyncStorage.getItem("userToken");
+
+      // Call API to update ready status
+      const response = await fetch(`${API_URL}/groups/${groupCode}/ready`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          username: currentUser.username,
+          is_ready: !isReady,
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setIsReady(!isReady);
+
+        // Update the user's status in the members list
+        setMembers(
+          members.map((member) => {
+            if (member.username === currentUser?.username) {
+              return {
+                ...member,
+                is_ready: !isReady,
+              };
+            }
+            return member;
+          })
+        );
+
+        // Fetch updated members list
+        fetchGroupMembers();
+      } else {
+        const errorData = await response.json();
+        Alert.alert("Error", errorData.error || "Failed to update status");
+      }
+    } catch (error) {
+      console.error("Error updating ready status:", error);
+      Alert.alert("Error", "Failed to update ready status. Please try again.");
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -185,7 +238,7 @@ export default function GroupLobbyScreen() {
               const userToken = await AsyncStorage.getItem("userToken");
 
               if (!userToken) {
-                router.replace({ pathname: "/(tabs)" });
+                router.replace("/(tabs)");
                 return;
               }
 
@@ -206,7 +259,7 @@ export default function GroupLobbyScreen() {
 
               if (response.ok) {
                 // Navigate back to home
-                router.replace({ pathname: "/(tabs)" });
+                router.replace("/(tabs)");
               } else {
                 const errorData = await response.json();
                 Alert.alert(
@@ -217,7 +270,7 @@ export default function GroupLobbyScreen() {
             } catch (error) {
               console.error("Error leaving group:", error);
               Alert.alert("Error", "Failed to leave group. Please try again.");
-              router.replace({ pathname: "/(tabs)" });
+              router.replace("/(tabs)");
             }
           },
         },
@@ -254,12 +307,16 @@ export default function GroupLobbyScreen() {
           style={[
             styles.statusBadge,
             {
-              backgroundColor: item.is_ready ? "#4CAF50" : "#FFC107",
+              backgroundColor: item.is_host
+                ? "#4ECDC4"
+                : item.is_ready
+                ? "#4CAF50"
+                : "#FFC107",
             },
           ]}
         >
           <ThemedText style={styles.statusText}>
-            {item.is_ready ? "Ready" : "Waiting"}
+            {item.is_host ? "Host" : item.is_ready ? "Ready" : "Waiting"}
           </ThemedText>
         </ThemedView>
       </View>
@@ -298,23 +355,66 @@ export default function GroupLobbyScreen() {
 
       <View style={styles.infoContainer}>
         <ThemedText style={styles.infoText}>
-          {isHost
-            ? "You're the host! Share this code with friends to let them join your group."
-            : "Share this code with friends to let them join your group!"}
+          Share this code with friends to let them join your group!
         </ThemedText>
+      </View>
+
+      {/* Status Box with Ready Button - even for host */}
+      <ThemedView style={[styles.statusBox, { backgroundColor: cardColor }]}>
+        <ThemedText style={styles.statusBoxTitle}>Your Status</ThemedText>
+
+        <TouchableOpacity
+          style={[
+            styles.readyButton,
+            { backgroundColor: isReady ? "#4CAF50" : "#FFC107" },
+          ]}
+          onPress={toggleReadyStatus}
+          disabled={updatingStatus}
+        >
+          {updatingStatus ? (
+            <View style={styles.updatingContainer}>
+              <ActivityIndicator color="white" size="small" />
+              <ThemedText style={styles.readyButtonText}>
+                Updating...
+              </ThemedText>
+            </View>
+          ) : (
+            <>
+              <Ionicons
+                name={isReady ? "checkmark-circle" : "time-outline"}
+                size={20}
+                color="#fff"
+                style={styles.readyIcon}
+              />
+              <ThemedText style={styles.readyButtonText}>
+                {isReady ? "I'm Ready" : "Mark as Ready"}
+              </ThemedText>
+            </>
+          )}
+        </TouchableOpacity>
 
         {isHost && (
-          <ThemedText style={[styles.infoText, styles.hostNote]}>
+          <ThemedText style={styles.hostNote}>
             As the host, you can start the restaurant selection once everyone is
             ready.
           </ThemedText>
         )}
-      </View>
+      </ThemedView>
 
       <View style={styles.membersContainer}>
-        <ThemedText style={styles.membersTitle}>
-          Members ({members.length})
-        </ThemedText>
+        <View style={styles.membersHeader}>
+          <ThemedText style={styles.membersTitle}>
+            Members ({members.length})
+          </ThemedText>
+
+          {/* Manual refresh button */}
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={fetchGroupMembers}
+          >
+            <Ionicons name="refresh-outline" size={20} color={textColor} />
+          </TouchableOpacity>
+        </View>
 
         {isLoading ? (
           <View style={styles.loadingMembersContainer}>
@@ -334,14 +434,6 @@ export default function GroupLobbyScreen() {
             }
           />
         )}
-
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={fetchGroupMembers}
-        >
-          <Ionicons name="refresh" size={20} color={textColor} />
-          <ThemedText style={styles.refreshText}>Refresh Members</ThemedText>
-        </TouchableOpacity>
       </View>
 
       {isHost && (
@@ -373,6 +465,63 @@ export default function GroupLobbyScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Style additions for new components
+  statusBox: {
+    margin: 16,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    alignItems: "center",
+  },
+  statusBoxTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 14,
+  },
+  readyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    marginBottom: 16,
+    width: "80%",
+  },
+  readyIcon: {
+    marginRight: 8,
+  },
+  readyButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 5,
+  },
+  hostNote: {
+    fontSize: 13,
+    opacity: 0.7,
+    textAlign: "center",
+  },
+  updatingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  membersHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  loadingMembersContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
   container: {
     flex: 1,
     padding: 20,
@@ -432,11 +581,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
-  hostNote: {
-    marginTop: 10,
-    fontSize: 14,
-    opacity: 0.8,
-  },
   membersContainer: {
     marginTop: 20,
     flex: 1,
@@ -492,10 +636,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 10,
     fontSize: 16,
-  },
-  loadingMembersContainer: {
-    padding: 20,
-    alignItems: "center",
   },
   emptyText: {
     textAlign: "center",

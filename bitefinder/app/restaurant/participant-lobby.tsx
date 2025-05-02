@@ -73,15 +73,6 @@ export default function ParticipantLobbyScreen() {
     };
 
     loadUserAndJoinGroup();
-
-    // Poll for updates every 5 seconds
-    const interval = setInterval(() => {
-      if (!isJoining && !joinError) {
-        fetchGroupMembers();
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [groupCode]);
 
   // Join the group
@@ -173,19 +164,9 @@ export default function ParticipantLobbyScreen() {
         if (currentMember) {
           setIsReady(currentMember.is_ready || false);
         }
-
-        // Check if group selection has started
-        if (data.group_status === "selecting") {
-          // Navigate to restaurant selection screen
-          router.replace({
-            pathname: "/restaurant/group-selection",
-            params: { groupCode },
-          });
-        }
       } else {
         const errorData = await response.json();
 
-        // If group is inactive, return to friends page
         if (errorData.error === "Group is inactive") {
           Alert.alert(
             "Group Inactive",
@@ -213,7 +194,7 @@ export default function ParticipantLobbyScreen() {
     }
   };
 
-  // Toggle ready status
+  // Toggle ready status - this is the button implementation you requested
   const toggleReadyStatus = async () => {
     try {
       setUpdatingStatus(true);
@@ -248,6 +229,9 @@ export default function ParticipantLobbyScreen() {
             return member;
           })
         );
+
+        // Fetch updated members list after status change
+        fetchGroupMembers();
       } else {
         const errorData = await response.json();
         Alert.alert("Error", errorData.error || "Failed to update status");
@@ -405,10 +389,11 @@ export default function ParticipantLobbyScreen() {
         </ThemedText>
       </ThemedView>
 
-      {/* Status Box */}
+      {/* Status Box with Ready Button */}
       <ThemedView style={[styles.statusBox, { backgroundColor: cardColor }]}>
         <ThemedText style={styles.statusBoxTitle}>Your Status</ThemedText>
 
+        {/* This is the button you wanted for marking user as ready */}
         <TouchableOpacity
           style={[
             styles.readyButton,
@@ -444,13 +429,14 @@ export default function ParticipantLobbyScreen() {
         </ThemedText>
       </ThemedView>
 
-      {/* Members List */}
+      {/* Members List with Refresh Button */}
       <ThemedView style={styles.membersSection}>
         <View style={styles.membersHeader}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Group Members ({members.length})
           </ThemedText>
 
+          {/* Manual refresh button */}
           <TouchableOpacity
             style={styles.refreshButton}
             onPress={fetchGroupMembers}
