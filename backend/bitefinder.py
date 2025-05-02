@@ -23,6 +23,33 @@ def get_db_connection():
     )
     return conn
 
+#drop all tables
+def drop_all_tables():
+    """Drop all tables in the database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DROP TABLE IF EXISTS user_restaurant")
+        cursor.execute("DROP TABLE IF EXISTS restaurant_image")
+        cursor.execute("DROP TABLE IF EXISTS group_user")
+        cursor.execute("DROP TABLE IF EXISTS `group`")
+        cursor.execute("DROP TABLE IF EXISTS restaurant")
+        cursor.execute("DROP TABLE IF EXISTS user")
+        
+        conn.commit()
+        print("All tables dropped successfully")
+        
+    except Exception as e:
+        print(f"Error dropping tables: {e}")
+        conn.rollback()
+        
+    finally:
+        cursor.close()
+        conn.close()
+# Uncomment the line below to drop all tables before initializing
+#drop_all_tables()
+
 
 def init_db():
     """Initialize database tables if they don't exist"""
@@ -43,7 +70,7 @@ def init_db():
         # Create restaurant table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS restaurant (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            restaurant_id VARCHAR(100) PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             rating FLOAT NOT NULL,
             url_location VARCHAR(255) NOT NULL
@@ -371,7 +398,7 @@ def get_restaurants():
         
         # Get images for each restaurant
         for restaurant in restaurants:
-            restaurant_id = restaurant['id']
+            restaurant_id = restaurant['restaurant_id']  # Changed from 'id' to 'restaurant_id'
             cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
             images = cursor.fetchall()
             restaurant['images'] = [img['image_url'] for img in images]
@@ -386,34 +413,7 @@ def get_restaurants():
         cursor.close()
         conn.close()
 
-@app.route('/restaurants/<int:restaurant_id>', methods=['GET'])
-def get_restaurant(restaurant_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # Get restaurant details
-        cursor.execute("SELECT * FROM restaurant WHERE id = %s", (restaurant_id,))
-        restaurant = cursor.fetchone()
-        
-        if not restaurant:
-            return jsonify({'error': 'Restaurant not found'}), 404
-        
-        # Get restaurant images
-        cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
-        images = cursor.fetchall()
-        
-        restaurant['images'] = [img['image_url'] for img in images]
-        restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
-        
-        return jsonify({'restaurant': restaurant}), 200
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        conn.close()
+
 @app.route('/users', methods=['GET'])
 def get_users():
     conn = get_db_connection()
@@ -432,124 +432,15 @@ def get_users():
         cursor.close()
         conn.close()
 
-@app.route('/users/<username>/favorites', methods=['GET'])
-def get_user_favorites(username):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # Validate that user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not found'}), 404
-            
-        # Get user's favorite restaurants
-        cursor.execute("""
-            SELECT r.* 
-            FROM restaurant r
-            JOIN user_restaurant ur ON r.id = ur.restaurant_id
-            WHERE ur.username = %s
-        """, (username,))
-        
-        restaurants = cursor.fetchall()
-        
-        # Get images for each restaurant
-        for restaurant in restaurants:
-            restaurant_id = restaurant['id']
-            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
-            images = cursor.fetchall()
-            restaurant['images'] = [img['image_url'] for img in images]
-            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
-        
-        return jsonify({'favorites': restaurants}), 200
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        conn.close()
-
-@app.route('/users/<username>/favorites/<int:restaurant_id>', methods=['POST'])
-def add_favorite(username, restaurant_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Validate that user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not found'}), 404
-            
-        # Check if restaurant exists
-        cursor.execute("SELECT id FROM restaurant WHERE id = %s", (restaurant_id,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'Restaurant not found'}), 404
-        
-        # Check if already a favorite
-        cursor.execute("SELECT * FROM user_restaurant WHERE username = %s AND restaurant_id = %s", 
-                     (username, restaurant_id))
-        if cursor.fetchone():
-            return jsonify({'message': 'Restaurant already in favorites'}), 200
-        
-        # Add to favorites
-        cursor.execute("""
-            INSERT INTO user_restaurant (username, restaurant_id)
-            VALUES (%s, %s)
-        """, (username, restaurant_id))
-        
-        conn.commit()
-        
-        return jsonify({'message': 'Restaurant added to favorites'}), 201
-    
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        conn.close()
-
-@app.route('/users/<username>/favorites/<int:restaurant_id>', methods=['DELETE'])
-def remove_favorite(username, restaurant_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Validate that user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not found'}), 404
-            
-        # Remove from favorites
-        cursor.execute("""
-            DELETE FROM user_restaurant
-            WHERE username = %s AND restaurant_id = %s
-        """, (username, restaurant_id))
-        
-        conn.commit()
-        
-        if cursor.rowcount == 0:
-            return jsonify({'error': 'Restaurant not in favorites'}), 404
-            
-        return jsonify({'message': 'Restaurant removed from favorites'}), 200
-    
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        conn.close()
-
 # RESTAURANT MANAGEMENT ENDPOINTS
 @app.route('/restaurants', methods=['POST'])
 def add_restaurant():
     data = request.get_json()
     
-    if not all(k in data for k in ('name', 'rating', 'url_location')):
+    if not all(k in data for k in ('restaurant_id', 'name', 'rating', 'url_location')):
         return jsonify({'error': 'Missing required fields'}), 400
     
+    restaurant_id = data['restaurant_id']
     name = data['name']
     rating = data['rating']
     url_location = data['url_location']
@@ -561,12 +452,9 @@ def add_restaurant():
     try:
         # Add restaurant
         cursor.execute("""
-            INSERT INTO restaurant (name, rating, url_location)
-            VALUES (%s, %s, %s)
-        """, (name, rating, url_location))
-        
-        # Get the ID of the new restaurant
-        restaurant_id = cursor.lastrowid
+            INSERT INTO restaurant (restaurant_id, name, rating, url_location)
+            VALUES (%s, %s, %s, %s)
+        """, (restaurant_id, name, rating, url_location))
         
         # Add images
         for image_url in image_urls:
@@ -579,13 +467,219 @@ def add_restaurant():
         
         return jsonify({
             'message': 'Restaurant added successfully',
-            'restaurant_id': restaurant_id
+            'restaurant_id': restaurant_id,  # Changed from 'id' to 'restaurant_id'
         }), 201
     
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
     
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/groups/<code>/members', methods=['GET'])
+def get_group_members(code):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Check if the group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        # Get all members of the group
+        cursor.execute("""
+            SELECT u.username, u.name
+            FROM user u
+            JOIN group_user gu ON u.username = gu.username
+            WHERE gu.group_code = %s
+        """, (code,))
+        
+        members = cursor.fetchall()
+        
+        return jsonify({'members': members}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint para pegar informações do grupo
+@app.route('/groups/<code>', methods=['GET'])
+def get_group(code):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Check if the group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+            
+        # Incluir o criador do grupo na resposta
+        return jsonify({'group': group}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint para marcar-se como pronto ou não pronto
+@app.route('/groups/<code>/ready', methods=['POST'])
+def update_ready_status(code):
+    data = request.get_json()
+    
+    if not all(k in data for k in ('username', 'is_ready')):
+        return jsonify({'error': 'Missing required fields'}), 400
+        
+    username = data['username']
+    is_ready = data['is_ready']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if the group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+            
+        # Check if user is in the group
+        cursor.execute(
+            "SELECT * FROM group_user WHERE group_code = %s AND username = %s", 
+            (code, username)
+        )
+        
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not in group'}), 404
+            
+        # Update user's ready status
+        cursor.execute(
+            "UPDATE group_user SET is_ready = %s WHERE group_code = %s AND username = %s",
+            (is_ready, code, username)
+        )
+        
+        conn.commit()
+        
+        return jsonify({'message': 'Ready status updated successfully'}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint para sair do grupo
+@app.route('/groups/<code>/leave', methods=['POST'])
+def leave_group(code):
+    data = request.get_json()
+    
+    if 'username' not in data:
+        return jsonify({'error': 'Missing username'}), 400
+        
+    username = data['username']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Check if the group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+            
+        # Check if user is in the group
+        cursor.execute(
+            "SELECT * FROM group_user WHERE group_code = %s AND username = %s", 
+            (code, username)
+        )
+        
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not in group'}), 404
+            
+        # Check if user is the host/creator
+        is_creator = (group['creator_username'] == username)
+        
+        if is_creator:
+            # If the user is the creator, mark the group as inactive
+            cursor.execute(
+                "UPDATE `group` SET active = 0 WHERE code = %s",
+                (code,)
+            )
+        else:
+            # Remove the user from the group
+            cursor.execute(
+                "DELETE FROM group_user WHERE group_code = %s AND username = %s",
+                (code, username)
+            )
+            
+        conn.commit()
+        
+        return jsonify({'message': 'Successfully left group'}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint para iniciar a seleção de restaurantes
+@app.route('/groups/<code>/start', methods=['POST'])
+def start_restaurant_selection(code):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Check if the group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+            
+        # Check if all members are ready
+        cursor.execute(
+            "SELECT COUNT(*) as total, SUM(is_ready) as ready FROM group_user WHERE group_code = %s",
+            (code,)
+        )
+        
+        result = cursor.fetchone()
+        
+        if result['total'] == 0 or result['ready'] < result['total']:
+            return jsonify({'error': 'Not all members are ready'}), 400
+            
+        # Update group status to "selecting"
+        cursor.execute(
+            "UPDATE `group` SET status = 'selecting' WHERE code = %s",
+            (code,)
+        )
+        
+        conn.commit()
+        
+        return jsonify({'message': 'Restaurant selection started'}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
     finally:
         cursor.close()
         conn.close()
