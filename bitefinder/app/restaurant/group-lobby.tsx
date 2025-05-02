@@ -225,6 +225,24 @@ export default function GroupLobbyScreen() {
         }, 3000);
       }
     });
+    socket.on("group_dissolved", (data) => {
+      console.log("Received group_dissolved event:", data);
+
+      if (!isHost) {
+        // Use isHost em vez de isDateCreator
+        // Show a toast notification
+        setToast({
+          visible: true,
+          message: data.message || "The group has been dissolved by the host",
+          type: "info",
+        });
+
+        // Delay navigation to allow toast to be seen
+        setTimeout(() => {
+          router.replace("/(tabs)");
+        }, 1500);
+      }
+    });
   };
   // Update useEffect for currentUser dependency
   useEffect(() => {
@@ -376,7 +394,6 @@ export default function GroupLobbyScreen() {
     }
   };
 
-  // Modified leaveGroup function without Alert
   const leaveGroup = async () => {
     try {
       setIsLeaving(true);
@@ -386,6 +403,31 @@ export default function GroupLobbyScreen() {
       if (!userToken) {
         router.replace("/(tabs)");
         return;
+      }
+
+      // Verifica se o socket está conectado antes de enviar mensagens
+      if (socketRef.current?.connected) {
+        if (isHost) {
+          // Se for host, emite evento de dissolução do grupo
+          console.log("Host is dissolving group:", groupCode);
+
+          socketRef.current.emit("group_dissolved_by_host", {
+            group_code: groupCode,
+            message: "The host has ended the group session",
+          });
+        } else {
+          // Se for participante normal, emite evento de saída
+          console.log("Member is leaving group:", groupCode);
+
+          socketRef.current.emit("member_leaving", {
+            group_code: groupCode,
+            username: currentUser.username,
+            name: currentUser.name || currentUser.username,
+          });
+        }
+
+        // Adiciona um atraso para garantir que a mensagem tenha tempo de ser processada
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Call API to leave/dissolve group
@@ -407,12 +449,12 @@ export default function GroupLobbyScreen() {
       } else {
         const errorData = await response.json();
         setLeaveError(errorData.error || "Failed to leave group");
-        setTimeout(() => setLeaveError(""), 5000); // Clear error after 5 seconds
+        setTimeout(() => setLeaveError(""), 5000);
       }
     } catch (error) {
       console.error("Error leaving group:", error);
       setLeaveError("Network error. Failed to leave group.");
-      setTimeout(() => setLeaveError(""), 5000); // Clear error after 5 seconds
+      setTimeout(() => setLeaveError(""), 5000);
     } finally {
       setIsLeaving(false);
     }

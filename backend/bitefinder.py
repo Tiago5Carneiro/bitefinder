@@ -193,6 +193,53 @@ def handle_leave_group(data):
     leave_room(room)
     print(f'Client left room: {room}')
 
+# Add this event handler near the other socketio event handlers
+# Update the group_dissolved_by_host handler
+@socketio.on('group_dissolved_by_host')
+def handle_group_dissolved(data):
+    room = data.get('group_code')
+    if room:
+        print(f"Received group_dissolved_by_host for room {room}")
+        
+        # Mark the group as inactive in the database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE `group` SET status = 'inactive' WHERE code = %s",
+                (room,)
+            )
+            conn.commit()
+            print(f"Group {room} marked as inactive in database")
+        except Exception as e:
+            print(f"Error updating group status: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+        
+        # Forward the dissolution event to all clients in the room
+        emit('group_dissolved', {
+            'message': data.get('message', 'The host has dissolved the group'),
+            'redirect': True
+        }, room=room)
+        
+        print(f"Group dissolution event sent to room {room}")
+
+@socketio.on('member_leaving')
+def handle_member_leaving(data):
+    room = data.get('group_code')
+    username = data.get('username')
+    name = data.get('name', username)
+    
+    if room and username:
+        print(f"Member {username} is leaving room {room}")
+        # Enviar para todos os outros membros do grupo
+        emit('member_left', {
+            'username': username,
+            'name': name,
+            'message': f"{name} has left the group"
+        }, room=room)
+
 # Helper functions
 def hash_password(password):
     """Hash a password for storage"""
@@ -688,6 +735,7 @@ def update_ready_status(code):
 @app.route('/groups/<code>/leave', methods=['POST'])
 def leave_group(code):
     data = request.get_json()
+    print(data) 
     
     if 'username' not in data:
         return jsonify({'error': 'Missing username'}), 400
@@ -702,6 +750,8 @@ def leave_group(code):
         # Check if the group exists
         cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
         group = cursor.fetchone()
+
+        print(group)  # Debugging line
         
         if not group:
             return jsonify({'error': 'Group not found'}), 404
@@ -712,7 +762,11 @@ def leave_group(code):
             (code, username)
         )
         
-        if not cursor.fetchone():
+        # CORREÇÃO: Armazene o resultado em uma variável em vez de usar fetchone() duas vezes
+        user_in_group = cursor.fetchone()
+        print(user_in_group)  # Debugging line
+        
+        if not user_in_group:
             return jsonify({'error': 'User not in group'}), 404
             
         # Check if user is the host/creator
@@ -724,13 +778,16 @@ def leave_group(code):
                 "UPDATE `group` SET status = 'inactive' WHERE code = %s",
                 (code,)
             )
+
+            print("Group status updated to inactive")  # Debugging line
             
             # Notify all clients in the group to redirect to home
             socketio.emit('group_dissolved', {
-                'message': 'The host has dissolved the group'
+                'message': 'The host has dissolved the group',
+                'redirect': True
             }, room=code)
+            print("Group dissolved notification sent")  # Debugging line
             
-            # Don't call leave_room here - it's an HTTP request
         else:
             # Get user details for notification
             cursor.execute("SELECT name FROM user WHERE username = %s", (username,))
@@ -749,8 +806,6 @@ def leave_group(code):
                 'name': user_name,
                 'message': f"{user_name} has left the group"
             }, room=code)
-            
-            # Don't call leave_room here - it's an HTTP request
             
             # Get updated member list
             cursor.execute("""
