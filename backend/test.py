@@ -42,6 +42,7 @@ def test_create_group(token, username):
 def test_add_restaurant():
     url = f"{BASE_URL}/restaurants"
     data = {
+        "restaurant_id": "123456",
         "name": "Test Restaurant",
         "rating": 4.5,
         "url_location": "https://maps.google.com/test",
