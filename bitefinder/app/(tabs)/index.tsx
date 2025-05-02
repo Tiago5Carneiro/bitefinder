@@ -60,7 +60,75 @@ export default function DiningOptionsScreen() {
     if (option === "solo") {
       router.push({ pathname: "/restaurant/solo-selection" });
     } else if (option === "date") {
-      router.push({ pathname: "/restaurant/date-lobby" });
+      try {
+        // Set loading state
+        setIsLoading(true);
+        setLoadingMessage("Creating your date session...");
+
+        // Get the user token and data from AsyncStorage
+        const userToken = await AsyncStorage.getItem("userToken");
+        const userData = await AsyncStorage.getItem("userData");
+
+        if (!userToken || !userData) {
+          setIsLoading(false);
+          Alert.alert(
+            "Not logged in",
+            "Please login first to create a date session"
+          );
+          router.push({ pathname: "/(auth)/login" });
+          return;
+        }
+
+        const user = JSON.parse(userData);
+        setLoadingMessage(`Setting up a date session for ${user.name}...`);
+
+        // Create a new group with date type (max 2 people)
+        const response = await fetch(`${API_URL}/groups/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${userToken}`,
+          },
+          body: JSON.stringify({
+            name: "Romantic Evening",
+            username: user.username,
+            type: "date", // Add a type parameter to indicate this is a date group
+            max_members: 2, // Limit to 2 participants
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Store the group code in state or AsyncStorage if needed
+          await AsyncStorage.setItem("currentDateCode", data.code);
+          setLoadingMessage("Date session created! Redirecting to lobby...");
+
+          // Slight delay for better UX
+          setTimeout(() => {
+            setIsLoading(false);
+
+            // Navigate to the date lobby with the group code
+            router.push({
+              pathname: "/restaurant/date-lobby",
+              params: {
+                dateCode: data.code,
+                dateName: data.name,
+              },
+            });
+          }, 800);
+        } else {
+          setIsLoading(false);
+          Alert.alert("Error", data.error || "Failed to create date session");
+        }
+      } catch (error) {
+        setIsLoading(false);
+        console.error("Error creating date session:", error);
+        Alert.alert(
+          "Error",
+          "Failed to create date session. Please try again."
+        );
+      }
     } else if (option === "group") {
       try {
         // Set loading state
@@ -92,6 +160,8 @@ export default function DiningOptionsScreen() {
           body: JSON.stringify({
             name: `${user.name}'s Group`,
             username: user.username,
+            type: "group", // Standard group type
+            max_members: 10, // Default max members for regular groups
           }),
         });
 
@@ -187,6 +257,7 @@ export default function DiningOptionsScreen() {
           style={styles.optionCard}
           onPress={() => handleOptionSelection("date")}
           activeOpacity={0.9}
+          disabled={isLoading}
         >
           <LinearGradient
             colors={["#FF6B9D", "#FF8F6B"]}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -11,6 +11,7 @@ import {
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { io, Socket } from "socket.io-client"; // Import Socket.io client
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -28,12 +29,21 @@ interface Member {
 export default function GroupLobbyScreen() {
   const { groupCode, groupName } = useLocalSearchParams();
   const [members, setMembers] = useState<Member[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isHost, setIsHost] = useState(false);
   const [allReady, setAllReady] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const [readyCount, setReadyCount] = useState(0);
+  const [toast, setToast] = useState({
+    visible: false,
+    message: "",
+    type: "info",
+  });
 
   const tintColor = useThemeColor({}, "tint");
   const backgroundColor = useThemeColor({}, "background");
@@ -60,7 +70,14 @@ export default function GroupLobbyScreen() {
 
           if (response.ok) {
             const data = await response.json();
-            setIsHost(data.group.creator_username === user.username);
+            const isUserHost = data.group.creator_username === user.username;
+            setIsHost(isUserHost);
+
+            // If user is host, automatically set them as ready
+            if (isUserHost && !isReady) {
+              setIsReady(true);
+              updateHostReadyStatus(true);
+            }
           }
         }
       } catch (error) {
@@ -70,7 +87,123 @@ export default function GroupLobbyScreen() {
 
     loadUserData();
     fetchGroupMembers();
+
+    // Initialize Socket.io connection
+    const socket = io(API_URL);
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("Connected to WebSocket server");
+      // Join the room with the same event name and payload format
+      socket.emit("join_group", { group_code: groupCode });
+      console.log(`Joined room: ${groupCode}`);
+    });
+
+    // Handler para atualização de membros
+    socket.on("members_update", (data) => {
+      console.log("Received members update:", data);
+
+      // Verificar se temos um array de membros
+      if (data && Array.isArray(data.members)) {
+        // Transformar arrays em objetos
+        const formattedMembers = data.members
+          .map((member: Member | any[]) => {
+            // Verificar se é um array ou já é um objeto
+            if (Array.isArray(member)) {
+              // Se for array, assumir a ordem: [username, name, is_ready, is_host]
+              return {
+                username: member[0] || "",
+                name: member[1] || "",
+                is_ready: Boolean(member[2]),
+                is_host: Boolean(member[3]),
+              };
+            } else if (typeof member === "object" && member !== null) {
+              // Se já for um objeto, usar diretamente
+              return member;
+            }
+            return null;
+          })
+          .filter((member: Member | null) => member !== null);
+
+        console.log("Formatted members:", formattedMembers);
+
+        // Atualizar estado com os membros formatados
+        setMembers(formattedMembers);
+
+        // Verificar se todos estão prontos
+        const allMembersReady = formattedMembers.every(
+          (m: Member) => m.is_ready
+        );
+        setAllReady(allMembersReady && formattedMembers.length > 0);
+
+        // Atualizar status do usuário atual
+        if (currentUser?.username) {
+          const currentMember = formattedMembers.find(
+            (m: Member) => m.username === currentUser.username
+          );
+          if (currentMember) {
+            setIsReady(currentMember.is_ready);
+          }
+        }
+      } else {
+        console.error("Invalid members data format:", data);
+      }
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        // Explicitly leave room before disconnecting
+        socketRef.current.emit("leave_group", { group_code: groupCode });
+        socketRef.current.disconnect();
+      }
+    };
   }, [groupCode]);
+
+  // Add new function to update host's ready status
+  const updateHostReadyStatus = async (ready: boolean) => {
+    try {
+      const userToken = await AsyncStorage.getItem("userToken");
+
+      await fetch(`${API_URL}/groups/${groupCode}/ready`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          username: currentUser.username,
+          is_ready: ready,
+        }),
+      });
+    } catch (error) {
+      console.error("Error updating host ready status:", error);
+    }
+  };
+
+  // Update members effect to count ready members
+  useEffect(() => {
+    if (members.length > 0) {
+      const readyMembers = members.filter((m) => m.is_ready).length;
+      setReadyCount(readyMembers);
+
+      // Check if all members are ready
+      setAllReady(readyMembers === members.length && members.length > 0);
+    }
+  }, [members]);
+
+  // Update useEffect for currentUser dependency
+  useEffect(() => {
+    if (currentUser && members.length > 0) {
+      // Update current user's ready status whenever members or currentUser changes
+      const currentMember = members.find(
+        (m) => m.username === currentUser.username
+      );
+      if (currentMember) {
+        setIsReady(currentMember.is_ready || false);
+      }
+    }
+  }, [currentUser, members]);
 
   const fetchGroupMembers = async () => {
     try {
@@ -101,11 +234,13 @@ export default function GroupLobbyScreen() {
         setAllReady(allMembersReady && data.members.length > 0);
 
         // Update current user's ready status
-        const currentMember = data.members.find(
-          (m: Member) => m.username === currentUser?.username
-        );
-        if (currentMember) {
-          setIsReady(currentMember.is_ready || false);
+        if (currentUser) {
+          const currentMember = data.members.find(
+            (m: Member) => m.username === currentUser.username
+          );
+          if (currentMember) {
+            setIsReady(currentMember.is_ready || false);
+          }
         }
       } else {
         const errorData = await response.json();
@@ -142,24 +277,9 @@ export default function GroupLobbyScreen() {
       });
 
       if (response.ok) {
-        // Update local state
+        // Local state update is no longer needed as we'll receive the update via WebSocket
+        // but we'll update it anyway for immediate feedback
         setIsReady(!isReady);
-
-        // Update the user's status in the members list
-        setMembers(
-          members.map((member) => {
-            if (member.username === currentUser?.username) {
-              return {
-                ...member,
-                is_ready: !isReady,
-              };
-            }
-            return member;
-          })
-        );
-
-        // Fetch updated members list
-        fetchGroupMembers();
       } else {
         const errorData = await response.json();
         Alert.alert("Error", errorData.error || "Failed to update status");
@@ -222,90 +342,126 @@ export default function GroupLobbyScreen() {
     }
   };
 
-  const leaveGroup = () => {
-    Alert.alert(
-      isHost ? "Dissolve Group" : "Leave Group",
-      isHost
-        ? "As the host, leaving will dissolve the group for all members. Are you sure?"
-        : "Are you sure you want to leave this group?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: isHost ? "Dissolve Group" : "Leave",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const userToken = await AsyncStorage.getItem("userToken");
+  // Modified leaveGroup function without Alert
+  const leaveGroup = async () => {
+    try {
+      setIsLeaving(true);
+      setLeaveError("");
+      const userToken = await AsyncStorage.getItem("userToken");
 
-              if (!userToken) {
-                router.replace("/(tabs)");
-                return;
-              }
+      if (!userToken) {
+        router.replace("/(tabs)");
+        return;
+      }
 
-              // Call API to leave/dissolve group
-              const response = await fetch(
-                `${API_URL}/groups/${groupCode}/leave`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${userToken}`,
-                  },
-                  body: JSON.stringify({
-                    username: currentUser.username,
-                  }),
-                }
-              );
-
-              if (response.ok) {
-                // Navigate back to home
-                router.replace("/(tabs)");
-              } else {
-                const errorData = await response.json();
-                Alert.alert(
-                  "Error",
-                  errorData.error || "Failed to leave group"
-                );
-              }
-            } catch (error) {
-              console.error("Error leaving group:", error);
-              Alert.alert("Error", "Failed to leave group. Please try again.");
-              router.replace("/(tabs)");
-            }
-          },
+      // Call API to leave/dissolve group
+      const response = await fetch(`${API_URL}/groups/${groupCode}/leave`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
         },
-      ]
-    );
+        body: JSON.stringify({
+          username: currentUser.username,
+          is_host: isHost,
+        }),
+      });
+
+      if (response.ok) {
+        // Navigate back to home
+        router.replace("/(tabs)");
+      } else {
+        const errorData = await response.json();
+        setLeaveError(errorData.error || "Failed to leave group");
+        setTimeout(() => setLeaveError(""), 5000); // Clear error after 5 seconds
+      }
+    } catch (error) {
+      console.error("Error leaving group:", error);
+      setLeaveError("Network error. Failed to leave group.");
+      setTimeout(() => setLeaveError(""), 5000); // Clear error after 5 seconds
+    } finally {
+      setIsLeaving(false);
+    }
   };
 
-  const renderMemberItem = ({ item }: { item: Member }) => (
-    <View style={[styles.memberItem, { borderBottomColor: cardColor + "30" }]}>
-      <View
-        style={[
-          styles.memberAvatar,
-          {
-            backgroundColor: item.is_host
-              ? "#4ECDC4"
-              : item.is_ready
-              ? "#4CAF50"
-              : "#FFC107",
-          },
-        ]}
-      >
-        <ThemedText style={styles.memberInitial}>
-          {item.name.charAt(0).toUpperCase()}
-        </ThemedText>
-      </View>
-      <View style={styles.memberInfoContainer}>
-        <ThemedText style={styles.memberName}>
-          {item.name}
-          {currentUser && item.username === currentUser.username && " (You)"}
-          {item.is_host && " • Host"}
-        </ThemedText>
+  // Add listener for WebSocket events
+  useEffect(() => {
+    if (socketRef.current) {
+      // Handle group_dissolved event
+      socketRef.current.on("group_dissolved", (data) => {
+        if (!isHost) {
+          // Show a toast notification
+          setToast({
+            visible: true,
+            message: data.message || "The group has been dissolved by the host",
+            type: "info",
+          });
 
-        <ThemedView
+          // Delay navigation to allow toast to be seen
+          setTimeout(() => {
+            router.replace("/(tabs)");
+          }, 1500);
+        }
+      });
+
+      // Handle member_left event
+      socketRef.current.on("member_left", (data) => {
+        if (data && data.username) {
+          // Show toast notification about the member leaving
+          setToast({
+            visible: true,
+            message:
+              data.message ||
+              `${data.name || data.username} has left the group`,
+            type: "info",
+          });
+
+          // Toast will auto-dismiss after a few seconds
+          setTimeout(() => {
+            setToast({ visible: false, message: "", type: "info" });
+          }, 3000);
+        }
+      });
+
+      // Handle members_update event
+      socketRef.current.on("members_update", (data) => {
+        if (data && Array.isArray(data.members)) {
+          setMembers(data.members);
+
+          // Check if all members are ready
+          const readyCount = data.members.filter(
+            (m: Member) => m.is_ready
+          ).length;
+          setReadyCount(readyCount);
+          setAllReady(
+            readyCount === data.members.length && data.members.length > 0
+          );
+        }
+      });
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.off("group_dissolved");
+        socketRef.current.off("member_left");
+        socketRef.current.off("members_update");
+      }
+    };
+  }, [isHost, router]);
+  // Update renderMemberItem to safely handle undefined members
+  const renderMemberItem = ({ item }: { item: Member }) => {
+    // Add safety check for null or undefined item
+    if (!item || !item.name) {
+      return null; // Skip rendering this item if name is missing
+    }
+
+    return (
+      <View
+        style={[styles.memberItem, { borderBottomColor: cardColor + "30" }]}
+      >
+        <View
           style={[
-            styles.statusBadge,
+            styles.memberAvatar,
             {
               backgroundColor: item.is_host
                 ? "#4ECDC4"
@@ -315,34 +471,88 @@ export default function GroupLobbyScreen() {
             },
           ]}
         >
-          <ThemedText style={styles.statusText}>
-            {item.is_host ? "Host" : item.is_ready ? "Ready" : "Waiting"}
+          <ThemedText style={styles.memberInitial}>
+            {item.name.charAt(0).toUpperCase()}
           </ThemedText>
-        </ThemedView>
+        </View>
+        <View style={styles.memberInfoContainer}>
+          <ThemedText style={styles.memberName}>
+            {item.name}
+            {currentUser && item.username === currentUser.username && " (You)"}
+            {item.is_host && " • Host"}
+          </ThemedText>
+
+          <ThemedView
+            style={[
+              styles.statusBadge,
+              {
+                backgroundColor: item.is_host
+                  ? allReady
+                    ? "#4CAF50"
+                    : "#FFC107"
+                  : item.is_ready
+                  ? "#4CAF50"
+                  : "#FFC107",
+              },
+            ]}
+          >
+            <ThemedText style={styles.statusText}>
+              {item.is_host
+                ? allReady
+                  ? "All Ready"
+                  : `${readyCount}/${members.length} Ready`
+                : item.is_ready
+                ? "Ready"
+                : "Waiting"}
+            </ThemedText>
+          </ThemedView>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
+      {/* Toast notification */}
+      {toast.visible && (
+        <View
+          style={[
+            styles.toastContainer,
+            { backgroundColor: toast.type === "error" ? "#FF6B6B" : "#4ECDC4" },
+          ]}
         >
-          <Ionicons name="arrow-back" size={24} color={textColor} />
-        </TouchableOpacity>
+          <ThemedText style={styles.toastMessage}>{toast.message}</ThemedText>
+        </View>
+      )}
+      {/* Show leave error if any */}
+      {leaveError ? (
+        <View style={styles.errorBanner}>
+          <ThemedText style={styles.errorText}>{leaveError}</ThemedText>
+        </View>
+      ) : null}
+
+      <View style={styles.header}>
         <ThemedText type="title" style={styles.headerTitle}>
           Group Lobby
         </ThemedText>
 
-        <TouchableOpacity onPress={leaveGroup} style={styles.leaveButton}>
-          <Ionicons name="exit-outline" size={24} color="#FF6B6B" />
+        <TouchableOpacity
+          onPress={leaveGroup}
+          style={styles.leaveButton}
+          disabled={isLeaving}
+        >
+          {isLeaving ? (
+            <ActivityIndicator size="small" color="#FF6B6B" />
+          ) : (
+            <Ionicons name="exit-outline" size={24} color="#FF6B6B" />
+          )}
         </TouchableOpacity>
       </View>
 
       <View style={styles.codeContainer}>
-        <ThemedText style={styles.codeLabel}>Group Code:</ThemedText>
+        <ThemedText style={styles.codeLabel}>
+          Share this code with others:
+        </ThemedText>
         <ThemedText style={styles.codeText}>{groupCode}</ThemedText>
         <TouchableOpacity
           style={[styles.shareButton, { backgroundColor: tintColor }]}
@@ -355,7 +565,9 @@ export default function GroupLobbyScreen() {
 
       <View style={styles.infoContainer}>
         <ThemedText style={styles.infoText}>
-          Share this code with friends to let them join your group!
+          {isHost
+            ? "Wait for everyone to join, then start when all members are ready."
+            : "Wait for the host to start the restaurant selection when everyone is ready."}
         </ThemedText>
       </View>
 
@@ -363,75 +575,87 @@ export default function GroupLobbyScreen() {
       <ThemedView style={[styles.statusBox, { backgroundColor: cardColor }]}>
         <ThemedText style={styles.statusBoxTitle}>Your Status</ThemedText>
 
-        <TouchableOpacity
-          style={[
-            styles.readyButton,
-            { backgroundColor: isReady ? "#4CAF50" : "#FFC107" },
-          ]}
-          onPress={toggleReadyStatus}
-          disabled={updatingStatus}
-        >
-          {updatingStatus ? (
-            <View style={styles.updatingContainer}>
-              <ActivityIndicator color="white" size="small" />
-              <ThemedText style={styles.readyButtonText}>
-                Updating...
-              </ThemedText>
-            </View>
-          ) : (
-            <>
-              <Ionicons
-                name={isReady ? "checkmark-circle" : "time-outline"}
-                size={20}
-                color="#fff"
-                style={styles.readyIcon}
-              />
-              <ThemedText style={styles.readyButtonText}>
-                {isReady ? "I'm Ready" : "Mark as Ready"}
-              </ThemedText>
-            </>
-          )}
-        </TouchableOpacity>
+        {!isHost ? (
+          <TouchableOpacity
+            style={[
+              styles.readyButton,
+              { backgroundColor: isReady ? "#4CAF50" : "#FFC107" },
+            ]}
+            onPress={toggleReadyStatus}
+            disabled={updatingStatus}
+          >
+            {updatingStatus ? (
+              <View style={styles.updatingContainer}>
+                <ActivityIndicator color="white" size="small" />
+                <ThemedText style={styles.readyButtonText}>
+                  Updating...
+                </ThemedText>
+              </View>
+            ) : (
+              <>
+                <Ionicons
+                  name={isReady ? "checkmark-circle" : "time-outline"}
+                  size={20}
+                  color="#fff"
+                  style={styles.readyIcon}
+                />
+                <ThemedText style={styles.readyButtonText}>
+                  {isReady ? "I'm Ready" : "Mark as Ready"}
+                </ThemedText>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <ThemedView
+            style={[
+              styles.hostStatusBanner,
+              { backgroundColor: allReady ? "#4CAF50" : "#FFC107" },
+            ]}
+          >
+            <Ionicons
+              name={allReady ? "checkmark-circle" : "people-outline"}
+              size={24}
+              color="#fff"
+              style={styles.readyIcon}
+            />
+            <ThemedText style={styles.hostStatusText}>
+              {allReady
+                ? "Everyone is Ready!"
+                : `Waiting - ${readyCount}/${members.length} Ready`}
+            </ThemedText>
+          </ThemedView>
+        )}
 
         {isHost && (
           <ThemedText style={styles.hostNote}>
-            As the host, you can start the restaurant selection once everyone is
-            ready.
+            As the host, you're automatically ready. You can start the selection
+            once everyone else is ready.
           </ThemedText>
         )}
       </ThemedView>
 
       <View style={styles.membersContainer}>
         <View style={styles.membersHeader}>
-          <ThemedText style={styles.membersTitle}>
-            Members ({members.length})
-          </ThemedText>
-
-          {/* Manual refresh button */}
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={fetchGroupMembers}
-          >
-            <Ionicons name="refresh-outline" size={20} color={textColor} />
-          </TouchableOpacity>
+          <ThemedText style={styles.membersTitle}>Members</ThemedText>
         </View>
 
         {isLoading ? (
           <View style={styles.loadingMembersContainer}>
-            <ActivityIndicator color={tintColor} />
+            <ActivityIndicator size="large" color={tintColor} />
             <ThemedText style={styles.loadingText}>
               Loading members...
             </ThemedText>
           </View>
+        ) : members.length === 0 ? (
+          <ThemedText style={styles.emptyText}>
+            No members joined yet.
+          </ThemedText>
         ) : (
           <FlatList
             data={members}
             renderItem={renderMemberItem}
             keyExtractor={(item) => item.username}
             style={styles.membersList}
-            ListEmptyComponent={
-              <ThemedText style={styles.emptyText}>No members yet</ThemedText>
-            }
           />
         )}
       </View>
@@ -456,7 +680,7 @@ export default function GroupLobbyScreen() {
           >
             {allReady
               ? "Start Picking Restaurants"
-              : "Waiting for all members to be ready..."}
+              : `Waiting for members (${readyCount}/${members.length} Ready)`}
           </ThemedText>
         </TouchableOpacity>
       )}
@@ -466,6 +690,27 @@ export default function GroupLobbyScreen() {
 
 const styles = StyleSheet.create({
   // Style additions for new components
+
+  toastContainer: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    right: 20,
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 100,
+    opacity: 0.95,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  toastMessage: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
+  },
   statusBox: {
     margin: 16,
     marginTop: 0,
@@ -664,6 +909,36 @@ const styles = StyleSheet.create({
   },
   startButtonText: {
     fontSize: 16,
+    fontWeight: "600",
+  },
+  hostStatusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    marginBottom: 16,
+    width: "80%",
+  },
+  hostStatusText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  errorBanner: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FF6B6B",
+    padding: 10,
+    zIndex: 100,
+  },
+  errorText: {
+    color: "white",
+    textAlign: "center",
     fontWeight: "600",
   },
 });
