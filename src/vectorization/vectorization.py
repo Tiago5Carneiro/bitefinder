@@ -197,3 +197,9 @@ def create_embeddings_file(path):
     f = open(path + "_vec","w")
     f.write(json.dumps(ret_dic))
     f.close()
+
+def create_embeddings_from_preferences(preferences):
+    starting_mistral_client()
+    response = text_from_user_restaurant_preferences(preferences)
+    restaurant_vector = creating_embeddings_from_text(response)
+    return restaurant_vector
