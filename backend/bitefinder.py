@@ -334,9 +334,10 @@ def create_group():
             (code, name, username)
         )
         
-        # Add the creator to the group
+
+        # Quando adicionar o criador ao grupo, marcá-lo como pronto por padrão
         cursor.execute(
-            "INSERT INTO group_user (group_code, username) VALUES (%s, %s)",
+            "INSERT INTO group_user (group_code, username, is_ready) VALUES (%s, %s, TRUE)",
             (code, username)
         )
         
