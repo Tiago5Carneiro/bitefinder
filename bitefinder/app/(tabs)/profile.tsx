@@ -1,7 +1,19 @@
+<<<<<<< Updated upstream
 import { StyleSheet, TouchableOpacity, TextInput, Alert, Modal, View, ScrollView, Image } from "react-native";
 import { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+=======
+import {
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Modal,
+  View,
+} from "react-native";
+import { useState } from "react";
+>>>>>>> Stashed changes
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -159,7 +171,7 @@ export default function ProfileScreen() {
   
   // Authentication and user context
   const { user, signOut } = useAuth();
-  
+
   // Theme colors
   const tintColor = useThemeColor({}, "tint");
   const backgroundColor = useThemeColor({}, "background");
