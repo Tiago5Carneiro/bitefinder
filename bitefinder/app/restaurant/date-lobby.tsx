@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   TouchableOpacity,
@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { io, Socket } from "socket.io-client"; // Import Socket.io client
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -50,83 +51,31 @@ export default function DateLobbyScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isPartnerReady, setIsPartnerReady] = useState(false);
   const [isDateCreator, setIsDateCreator] = useState(true);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
+  const [allRequiredReady, setAllRequiredReady] = useState(false);
+  const [readyCount, setReadyCount] = useState(0);
 
-  // Load user data and date info when component mounts
-  useEffect(() => {
-    const loadUserAndDateInfo = async () => {
-      try {
-        const userData = await AsyncStorage.getItem("userData");
-        const userToken = await AsyncStorage.getItem("userToken");
+  const [toast, setToast] = useState({
+    visible: false,
+    message: "",
+    type: "info",
+  });
 
-        if (!userData || !userToken) {
-          Alert.alert("Not logged in", "Please login first to continue");
-          router.replace({ pathname: "/(auth)/login" });
-          return;
-        }
+  // Socket reference
+  const socketRef = useRef<Socket | null>(null);
 
-        const user = JSON.parse(userData);
-        setCurrentUser(user);
-
-        // If dateCode is provided, load date info from API
-        if (dateCode) {
-          await fetchDateInfo(dateCode, userToken, user);
-        } else {
-          // This shouldn't happen, but handle it gracefully
-          Alert.alert("Error", "No date code provided");
-          router.back();
-        }
-      } catch (error) {
-        console.error("Error loading user or date info:", error);
-        Alert.alert(
-          "Error",
-          "Failed to load date information. Please try again."
-        );
-      }
-    };
-
-    loadUserAndDateInfo();
-  }, [dateCode]);
-
-  // Fetch date info from API
-  const fetchDateInfo = async (code: string, token: string, user: any) => {
+  // Fetch date members from API - moved outside to make it available
+  const fetchDateMembers = async (
+    code: string,
+    token: string | Promise<string>,
+    user: any
+  ) => {
     try {
-      setIsLoading(true);
-
-      // Get group info
-      const infoResponse = await fetch(`${API_URL}/groups/${code}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!infoResponse.ok) {
-        const errorData = await infoResponse.json();
-        Alert.alert(
-          "Error",
-          errorData.error || "Failed to get date information"
-        );
-        router.back();
-        return;
+      if (token instanceof Promise) {
+        token = await token;
       }
 
-      const infoData = await infoResponse.json();
-      setDateName(infoData.group.name);
-      setIsDateCreator(infoData.group.creator_username === user.username);
-
-      // Get group members
-      await fetchDateMembers(code, token, user);
-    } catch (error) {
-      console.error("Error fetching date info:", error);
-      Alert.alert("Error", "Failed to get date information. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch date members from API
-  const fetchDateMembers = async (code: string, token: string, user: any) => {
-    try {
       const membersResponse = await fetch(`${API_URL}/groups/${code}/members`, {
         method: "GET",
         headers: {
@@ -179,39 +128,261 @@ export default function DateLobbyScreen() {
     }
   };
 
-  // Function to invite partner
-  const invitePartner = async () => {
-    if (!partnerName.trim()) {
-      Alert.alert("Error", "Please enter your date's name");
-      return;
-    }
+  // Modificar o handler de members_update para usar a mesma lógica do group-lobby
+  const initializeSocket = (username: string) => {
+    // Initialize Socket.io connection
+    const socket = io(API_URL);
+    socketRef.current = socket;
 
+    socket.on("connect", () => {
+      console.log("Connected to WebSocket server");
+      // Join the room with username included
+      socket.emit("join_group", {
+        group_code: dateCode,
+        username: username,
+      });
+      console.log(`Joined room: ${dateCode} as ${username}`);
+    });
+
+    // Handler for members update with the logic from group-lobby
+    socket.on("members_update", (data) => {
+      console.log("Received members update:", data);
+
+      // Verify we have a members array
+      if (data && Array.isArray(data.members)) {
+        // Transform arrays to objects if needed
+        const formattedMembers = data.members
+          .map((member) => {
+            // Check if it's an array or already an object
+            if (Array.isArray(member)) {
+              // If array, assume order: [username, name, is_ready, is_host]
+              return {
+                username: member[0] || "",
+                name: member[1] || "",
+                is_ready: Boolean(member[2]),
+                is_host: Boolean(member[3]),
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  member[1] || "User"
+                )}&background=random`,
+              };
+            } else if (typeof member === "object" && member !== null) {
+              // If already an object, use directly but add avatar
+              return {
+                ...member,
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  member.name || "User"
+                )}&background=random`,
+              };
+            }
+            return null;
+          })
+          .filter((member) => member !== null);
+
+        console.log("Formatted members:", formattedMembers);
+
+        // Update state with formatted members
+        setMembers(formattedMembers);
+
+        // Check if all non-host members are ready (copiado do group-lobby)
+        const regularMembers = formattedMembers.filter((m) => !m.is_host);
+        const readyRegularMembers = regularMembers.filter(
+          (m) => m.is_ready
+        ).length;
+
+        setReadyCount(readyRegularMembers);
+        setAllRequiredReady(
+          readyRegularMembers === regularMembers.length &&
+            regularMembers.length > 0
+        );
+
+        // Update current user's status
+        if (currentUser?.username) {
+          const currentMember = formattedMembers.find(
+            (m) => m.username === currentUser.username
+          );
+          if (currentMember) {
+            setIsHostReady(currentMember.is_ready || false);
+            setIsDateCreator(currentMember.is_host || false);
+          }
+        }
+
+        // Check if there's a partner and if they're ready
+        if (currentUser?.username) {
+          const partner = formattedMembers.find(
+            (m) => m.username !== currentUser.username
+          );
+          if (partner) {
+            setIsPartnerReady(partner.is_ready || false);
+          }
+        }
+      } else {
+        console.error("Invalid members data format:", data);
+      }
+    });
+
+    // Handle member_left event
+    socket.on("member_left", (data) => {
+      if (data && data.username && data.username !== username) {
+        // Show toast notification about the member leaving
+        setToast({
+          visible: true,
+          message: `${data.name || data.username} has left the date`,
+          type: "info",
+        });
+
+        // Toast will auto-dismiss after a few seconds
+        setTimeout(() => {
+          setToast({ visible: false, message: "", type: "info" });
+        }, 3000);
+
+        // Refresh member list
+        fetchDateMembers(
+          dateCode,
+          AsyncStorage.getItem("userToken") as any,
+          currentUser
+        );
+      }
+    });
+
+    // Handle group_dissolved event
+    socket.on("group_dissolved", (data) => {
+      if (!isDateCreator) {
+        // Show a toast notification
+        setToast({
+          visible: true,
+          message: "The date has been cancelled by your partner",
+          type: "info",
+        });
+
+        // Delay navigation to allow toast to be seen
+        setTimeout(() => {
+          router.replace("/(tabs)");
+        }, 1500);
+      }
+    });
+
+    // Add handler for user_joined event - FIXED: moved inside initializeSocket
+    socket.on("user_joined", (data) => {
+      if (data && data.username && data.username !== username) {
+        // Show toast notification about the new user
+        setToast({
+          visible: true,
+          message: `${data.name || data.username} has joined your date!`,
+          type: "info",
+        });
+
+        // Toast will auto-dismiss after a few seconds
+        setTimeout(() => {
+          setToast({ visible: false, message: "", type: "info" });
+        }, 3000);
+
+        // Refresh member list
+        fetchDateMembers(
+          dateCode,
+          AsyncStorage.getItem("userToken") as any,
+          currentUser
+        );
+      }
+    });
+  };
+  // Adicionar este useEffect para contar os membros prontos (copiado do group-lobby)
+  useEffect(() => {
+    if (members.length > 0) {
+      // Filter out the host from the count
+      const regularMembers = members.filter((m) => !m.is_host);
+      const readyRegularMembers = regularMembers.filter(
+        (m) => m.is_ready
+      ).length;
+
+      setReadyCount(readyRegularMembers);
+
+      // Check if all non-host members are ready
+      setAllRequiredReady(
+        readyRegularMembers === regularMembers.length &&
+          regularMembers.length > 0
+      );
+    }
+  }, [members]);
+  // Load user data and date info when component mounts
+  useEffect(() => {
+    const loadUserAndDateInfo = async () => {
+      try {
+        const userData = await AsyncStorage.getItem("userData");
+        const userToken = await AsyncStorage.getItem("userToken");
+
+        if (!userData || !userToken) {
+          Alert.alert("Not logged in", "Please login first to continue");
+          router.replace({ pathname: "/(auth)/login" });
+          return;
+        }
+
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+
+        // If dateCode is provided, load date info from API
+        if (dateCode) {
+          await fetchDateInfo(dateCode, userToken, user);
+        } else {
+          // This shouldn't happen, but handle it gracefully
+          Alert.alert("Error", "No date code provided");
+          router.back();
+        }
+      } catch (error) {
+        console.error("Error loading user or date info:", error);
+        Alert.alert(
+          "Error",
+          "Failed to load date information. Please try again."
+        );
+      }
+    };
+
+    loadUserAndDateInfo();
+
+    // Clean up function for socket
+    return () => {
+      if (socketRef.current) {
+        // Explicitly leave room before disconnecting
+        socketRef.current.emit("leave_group", { group_code: dateCode });
+        socketRef.current.disconnect();
+      }
+    };
+  }, [dateCode]);
+
+  // Fetch date info from API
+  const fetchDateInfo = async (code: string, token: string, user: any) => {
     try {
       setIsLoading(true);
 
-      // Get user token
-      const userToken = await AsyncStorage.getItem("userToken");
-      if (!userToken) {
-        Alert.alert("Not logged in", "Please login first to continue");
-        router.replace({ pathname: "/(auth)/login" });
+      // Get group info
+      const infoResponse = await fetch(`${API_URL}/groups/${code}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!infoResponse.ok) {
+        const errorData = await infoResponse.json();
+        Alert.alert(
+          "Error",
+          errorData.error || "Failed to get date information"
+        );
+        router.back();
         return;
       }
 
-      // In a real API call, you would send the invite
-      // For now, we'll just show success message and update UI
-      Alert.alert(
-        "Invitation Ready",
-        `Share this code with ${partnerName} to invite them to your date: ${inviteCode}`,
-        [
-          { text: "Copy Code", onPress: () => shareInviteCode() },
-          { text: "OK" },
-        ]
-      );
+      const infoData = await infoResponse.json();
+      setDateName(infoData.group.name);
+      setIsDateCreator(infoData.group.creator_username === user.username);
 
-      setPartnerName("");
+      // Get group members
+      await fetchDateMembers(code, token, user);
+
+      // Initialize socket only after we have user data
+      initializeSocket(user.username);
     } catch (error) {
-      console.error("Error inviting partner:", error);
-      Alert.alert("Error", "Failed to invite partner. Please try again.");
+      console.error("Error fetching date info:", error);
+      Alert.alert("Error", "Failed to get date information. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -227,7 +398,7 @@ export default function DateLobbyScreen() {
   const shareInviteCode = async () => {
     try {
       await Share.share({
-        message: `Join me for dinner with BiteFinder! Use code: ${inviteCode}`,
+        message: `Join me for a romantic dinner with BiteFinder! Use code: ${inviteCode}`,
       });
     } catch (error) {
       Alert.alert("Error", "Could not share invite code");
@@ -264,21 +435,7 @@ export default function DateLobbyScreen() {
         // Update local state
         setIsHostReady(!isHostReady);
 
-        // Update the members list
-        setMembers(
-          members.map((member) => {
-            if (member.username === currentUser.username) {
-              return {
-                ...member,
-                is_ready: !isHostReady,
-              };
-            }
-            return member;
-          })
-        );
-
-        // Fetch updated members list
-        fetchDateMembers(inviteCode, userToken, currentUser);
+        // The socket will update the members list for all users
       } else {
         const errorData = await response.json();
         Alert.alert("Error", errorData.error || "Failed to update status");
@@ -291,7 +448,7 @@ export default function DateLobbyScreen() {
     }
   };
 
-  // Start the date selection process
+  // tDat the date selection process
   const startDateSelection = async () => {
     // Check if host is ready
     if (!isHostReady) {
@@ -307,13 +464,14 @@ export default function DateLobbyScreen() {
         return;
       }
 
-      // If partner hasn't joined or isn't ready, show a confirmation dialog
-      if (members.length < 2 || !isPartnerReady) {
+      // If not all required members are ready, show confirmation
+      if (!allRequiredReady) {
+        // Get count of members excluding the host
+        const regularMembers = members.filter((m) => !m.is_host);
+
         Alert.alert(
-          members.length < 2 ? "No Partner" : "Partner Not Ready",
-          members.length < 2
-            ? "You don't have a partner yet. Do you want to start anyway?"
-            : "Your partner isn't ready yet. Do you want to start anyway?",
+          "Not everyone is ready",
+          `Only ${readyCount} of ${regularMembers.length} members are ready. Do you want to start anyway?`,
           [
             { text: "Cancel", style: "cancel" },
             {
@@ -349,7 +507,7 @@ export default function DateLobbyScreen() {
           ]
         );
       } else {
-        // Both users are ready, start the selection
+        // All required members are ready, start the selection
         const response = await fetch(`${API_URL}/groups/${inviteCode}/start`, {
           method: "POST",
           headers: {
@@ -378,109 +536,46 @@ export default function DateLobbyScreen() {
     }
   };
 
-  // Cancel the date session
-  const cancelDate = () => {
-    Alert.alert(
-      "Cancel Date",
-      "Are you sure you want to cancel this date planning?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const userToken = await AsyncStorage.getItem("userToken");
-
-              if (!userToken) {
-                router.replace("/(tabs)");
-                return;
-              }
-
-              // Leave/dissolve the date group
-              const response = await fetch(
-                `${API_URL}/groups/${inviteCode}/leave`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${userToken}`,
-                  },
-                  body: JSON.stringify({
-                    username: currentUser.username,
-                  }),
-                }
-              );
-
-              if (response.ok) {
-                router.replace("/(tabs)");
-              } else {
-                const errorData = await response.json();
-                Alert.alert(
-                  "Error",
-                  errorData.error || "Failed to cancel date"
-                );
-                router.replace("/(tabs)");
-              }
-            } catch (error) {
-              console.error("Error canceling date:", error);
-              Alert.alert("Error", "Failed to cancel date. Please try again.");
-              router.replace("/(tabs)");
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Check partner status
-  const checkPartnerStatus = async () => {
+  // Handle leaving date (previously cancelDate)
+  const handleLeaveDate = async () => {
     try {
+      setIsLeaving(true);
+      setLeaveError("");
       const userToken = await AsyncStorage.getItem("userToken");
+
       if (!userToken) {
+        router.replace("/(tabs)");
         return;
       }
 
-      // Refresh member list to check partner status
-      await fetchDateMembers(inviteCode, userToken, currentUser);
+      // Call API to leave/dissolve group
+      const response = await fetch(`${API_URL}/groups/${inviteCode}/leave`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          username: currentUser.username,
+          is_host: isDateCreator,
+        }),
+      });
 
-      // If partner is now ready, show alert
-      const partner = members.find((m) => m.username !== currentUser.username);
-      if (partner && partner.is_ready && !isPartnerReady) {
-        Alert.alert("Partner Ready", `${partner.name} is now ready!`);
-        setIsPartnerReady(true);
-      } else if (partner && !partner.is_ready && isPartnerReady) {
-        Alert.alert("Partner Update", `${partner.name} is not ready yet.`);
-        setIsPartnerReady(false);
-      } else if (!partner && members.length < 2) {
-        Alert.alert("No Partner", "Your partner hasn't joined yet.");
+      if (response.ok) {
+        // Navigate back to home
+        router.replace("/(tabs)");
+      } else {
+        const errorData = await response.json();
+        setLeaveError(errorData.error || "Failed to leave date");
+        setTimeout(() => setLeaveError(""), 5000);
       }
     } catch (error) {
-      console.error("Error checking partner status:", error);
+      console.error("Error leaving date:", error);
+      setLeaveError("Network error. Failed to leave date.");
+      setTimeout(() => setLeaveError(""), 5000);
+    } finally {
+      setIsLeaving(false);
     }
-  };
-
-  // UI for Status Badge
-  const renderStatusBadge = (status: string, isReady: boolean) => {
-    let backgroundColor = "#FFC107"; // Default yellow for pending
-    let statusText = "Pending";
-
-    if (status === "host") {
-      backgroundColor = "#4ECDC4"; // Teal for host
-      statusText = "Host";
-    } else if (isReady) {
-      backgroundColor = "#4CAF50"; // Green for ready
-      statusText = "Ready";
-    } else if (status === "ready") {
-      backgroundColor = "#FFC107"; // Yellow for joined but not ready
-      statusText = "Not Ready";
-    }
-
-    return (
-      <ThemedView style={[styles.statusBadge, { backgroundColor }]}>
-        <ThemedText style={styles.statusText}>{statusText}</ThemedText>
-      </ThemedView>
-    );
   };
 
   // If still loading initial data
@@ -499,23 +594,41 @@ export default function DateLobbyScreen() {
     <ThemedView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* Header */}
-      <ThemedView style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
+      {/* Toast notification */}
+      {toast.visible && (
+        <View
+          style={[
+            styles.toastContainer,
+            { backgroundColor: toast.type === "error" ? "#FF6B6B" : "#FF6B9D" },
+          ]}
         >
-          <Ionicons name="chevron-back" size={24} color={textColor} />
-        </TouchableOpacity>
+          <ThemedText style={styles.toastMessage}>{toast.message}</ThemedText>
+        </View>
+      )}
 
-        <ThemedView style={styles.headerContent}>
-          <ThemedText type="subtitle" style={styles.headerTitle}>
-            Date Night
-          </ThemedText>
-        </ThemedView>
+      {/* Show leave error if any */}
+      {leaveError ? (
+        <View style={styles.errorBanner}>
+          <ThemedText style={styles.errorText}>{leaveError}</ThemedText>
+        </View>
+      ) : null}
 
-        <TouchableOpacity onPress={cancelDate} style={styles.cancelButton}>
-          <Ionicons name="close-circle-outline" size={24} color="#FF6B6B" />
+      {/* Header - Removed back button, using same leave style as group-lobby */}
+      <ThemedView style={styles.header}>
+        <ThemedText type="title" style={styles.headerTitle}>
+          Date Night
+        </ThemedText>
+
+        <TouchableOpacity
+          onPress={handleLeaveDate}
+          style={styles.leaveButton}
+          disabled={isLeaving}
+        >
+          {isLeaving ? (
+            <ActivityIndicator size="small" color="#FF6B6B" />
+          ) : (
+            <Ionicons name="exit-outline" size={24} color="#FF6B6B" />
+          )}
         </TouchableOpacity>
       </ThemedView>
 
@@ -569,84 +682,71 @@ export default function DateLobbyScreen() {
         </ThemedText>
       </ThemedView>
 
-      {/* Status Box - Ready status */}
       <ThemedView
         style={[styles.readyStatusBox, { backgroundColor: cardColor }]}
       >
         <ThemedText style={styles.readyStatusTitle}>Your Status</ThemedText>
 
-        <TouchableOpacity
-          style={[
-            styles.readyButton,
-            { backgroundColor: isHostReady ? "#4CAF50" : "#FFC107" },
-          ]}
-          onPress={toggleHostReadyStatus}
-          disabled={isUpdatingStatus}
-        >
-          {isUpdatingStatus ? (
-            <View style={styles.updatingContainer}>
-              <ActivityIndicator size="small" color="#fff" />
-              <ThemedText style={styles.readyButtonText}>
-                Updating...
-              </ThemedText>
-            </View>
-          ) : (
-            <>
-              <Ionicons
-                name={isHostReady ? "checkmark-circle" : "time-outline"}
-                size={20}
-                color="#fff"
-                style={styles.readyIcon}
-              />
-              <ThemedText style={styles.readyButtonText}>
-                {isHostReady ? "I'm Ready" : "Mark as Ready"}
-              </ThemedText>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <ThemedText style={styles.readyStatusHint}>
-          Mark yourself as ready when you're prepared to choose restaurants
-        </ThemedText>
-      </ThemedView>
-
-      {/* Partner Invite */}
-      {isDateCreator && members.length < 2 && (
-        <ThemedView style={styles.inviteSection}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Invite Your Date
-          </ThemedText>
-
-          <ThemedView style={styles.searchContainer}>
-            <Ionicons
-              name="heart"
-              size={20}
-              color="#FF6B9D"
-              style={styles.searchIcon}
-            />
-            <TextInput
-              style={[styles.searchInput, { color: textColor }]}
-              placeholder="Enter your date's name"
-              placeholderTextColor="#888"
-              value={partnerName}
-              onChangeText={setPartnerName}
-              returnKeyType="send"
-              onSubmitEditing={invitePartner}
-            />
-            <TouchableOpacity
-              style={[styles.sendButton, { backgroundColor: "#FF6B9D" }]}
-              onPress={invitePartner}
-              disabled={isLoading || !partnerName.trim()}
-            >
-              {isLoading ? (
+        {!isDateCreator ? (
+          <TouchableOpacity
+            style={[
+              styles.readyButton,
+              { backgroundColor: isHostReady ? "#4CAF50" : "#FFC107" },
+            ]}
+            onPress={toggleHostReadyStatus}
+            disabled={isUpdatingStatus}
+          >
+            {isUpdatingStatus ? (
+              <View style={styles.updatingContainer}>
                 <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons name="send" size={18} color="#fff" />
-              )}
-            </TouchableOpacity>
+                <ThemedText style={styles.readyButtonText}>
+                  Updating...
+                </ThemedText>
+              </View>
+            ) : (
+              <>
+                <Ionicons
+                  name={isHostReady ? "checkmark-circle" : "time-outline"}
+                  size={20}
+                  color="#fff"
+                  style={styles.readyIcon}
+                />
+                <ThemedText style={styles.readyButtonText}>
+                  {isHostReady ? "I'm Ready" : "Mark as Ready"}
+                </ThemedText>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <ThemedView
+            style={[
+              styles.hostStatusBanner,
+              { backgroundColor: allRequiredReady ? "#4CAF50" : "#FFC107" },
+            ]}
+          >
+            <Ionicons
+              name={allRequiredReady ? "checkmark-circle" : "people-outline"}
+              size={24}
+              color="#fff"
+              style={styles.readyIcon}
+            />
+            <ThemedText style={styles.hostStatusText}>
+              {allRequiredReady
+                ? "Everyone is Ready!"
+                : `Waiting - ${readyCount}/${
+                    members.filter((m) => !m.is_host).length
+                  } Ready`}
+            </ThemedText>
           </ThemedView>
-        </ThemedView>
-      )}
+        )}
+
+        {isDateCreator && (
+          <ThemedText style={styles.hostNote}>
+            As the host, you don't need to get ready. You can start when your
+            partner is ready.
+          </ThemedText>
+        )}
+      </ThemedView>
 
       {/* Members Cards */}
       <ThemedView style={styles.membersSection}>
@@ -657,7 +757,13 @@ export default function DateLobbyScreen() {
 
           <TouchableOpacity
             style={styles.refreshButton}
-            onPress={checkPartnerStatus}
+            onPress={() =>
+              fetchDateMembers(
+                inviteCode,
+                AsyncStorage.getItem("userToken") as any,
+                currentUser
+              )
+            }
           >
             <Ionicons name="refresh-outline" size={20} color={textColor} />
           </TouchableOpacity>
@@ -755,8 +861,14 @@ export default function DateLobbyScreen() {
             style={[
               styles.startButton,
               {
-                backgroundColor: isHostReady ? "#FF6B9D" : "#FFB0C9",
-                opacity: isHostReady ? 1 : 0.8,
+                backgroundColor:
+                  isHostReady && (allRequiredReady || members.length === 1)
+                    ? "#FF6B9D"
+                    : "#FFB0C9",
+                opacity:
+                  isHostReady && (allRequiredReady || members.length === 1)
+                    ? 1
+                    : 0.8,
               },
             ]}
             onPress={startDateSelection}
@@ -769,25 +881,24 @@ export default function DateLobbyScreen() {
               style={styles.buttonIcon}
             />
             <ThemedText style={styles.buttonText}>
-              {isHostReady
-                ? "Find Restaurant Together"
-                : "Mark yourself as ready first"}
+              {!isHostReady
+                ? "Mark yourself as ready first"
+                : !allRequiredReady &&
+                  members.filter((m) => !m.is_host).length > 0
+                ? `Waiting for members (${readyCount}/${
+                    members.filter((m) => !m.is_host).length
+                  } Ready)`
+                : "Find Restaurant Together"}
             </ThemedText>
           </TouchableOpacity>
         )}
-
-        <TouchableOpacity style={styles.cancelDateButton} onPress={cancelDate}>
-          <ThemedText style={[styles.cancelButtonText, { color: "#FF6B6B" }]}>
-            {isDateCreator ? "Cancel Date" : "Leave Date"}
-          </ThemedText>
-        </TouchableOpacity>
       </ThemedView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  // Loading styles
+  // ... rest of styles remain unchanged
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -796,6 +907,62 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
+  },
+  // Toast and error styles
+  toastContainer: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    right: 20,
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 100,
+    opacity: 0.95,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  hostStatusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    marginBottom: 16,
+    width: "80%",
+  },
+  hostStatusText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  hostNote: {
+    fontSize: 13,
+    opacity: 0.7,
+    textAlign: "center",
+  },
+  toastMessage: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  errorBanner: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FF6B6B",
+    padding: 10,
+    zIndex: 100,
+  },
+  errorText: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
   },
   membersHeader: {
     flexDirection: "row",
@@ -835,10 +1002,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 24,
+    fontWeight: "700",
+    textAlign: "center",
+    flex: 1,
   },
   backButton: {
+    padding: 8,
+    borderRadius: 20,
+  },
+  leaveButton: {
     padding: 8,
     borderRadius: 20,
   },
@@ -1069,5 +1242,16 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: "500",
+  },
+  partnerStatusChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  partnerStatusText: {
+    color: "#fff",
+    fontWeight: "600",
   },
 });
