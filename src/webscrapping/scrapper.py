@@ -26,7 +26,7 @@ def sample_get_place(api_key_string):
     center_coimbra = latlng_pb2.LatLng(latitude=40.2115, longitude=-8.4292 )
     center_porto = latlng_pb2.LatLng(latitude=41.15, longitude=-8.61024 )
     center_lisboa = latlng_pb2.LatLng(latitude=38.7071, longitude=-9.13549 )
-    circle = places_v1.Circle(center = center_coimbra, radius = 10000)
+    circle = places_v1.Circle(center = center_lisboa, radius = 10000)
     restriction = places_v1.SearchNearbyRequest.LocationRestriction()
     restriction.circle = circle
 
