@@ -36,6 +36,7 @@ def drop_all_tables():
         cursor.execute("DROP TABLE IF EXISTS `group`")
         cursor.execute("DROP TABLE IF EXISTS restaurant")
         cursor.execute("DROP TABLE IF EXISTS user")
+        cursor.execute("DROP TABLE IF EXISTS photo")
         
         conn.commit()
         print("All tables dropped successfully")
@@ -82,7 +83,7 @@ def init_db():
             type VARCHAR(100) NOT NULL,
             reservable BOOLEAN NOT NULL,
             vegetarian BOOLEAN NOT NULL,
-            summary VARCHAR(500) NOT NULL,
+            summary VARCHAR(500) NOT NULL
         )
         ''')
 
@@ -93,14 +94,14 @@ def init_db():
             end VARCHAR(20) NOT NULL,
             start VARCHAR(20) NOT NULL,
             day VARCHAR(10) NOT NULL,
-            restaurant_id VARCHAR(100) NOT NULL, 
+            restaurant_id VARCHAR(100) NOT NULL
         )
         ''')
 
         # Create photo table 
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS photo (
-            url VARCHAR(200) PRIMARY KEY,
+            url VARCHAR(500) PRIMARY KEY,
             restaurant_id VARCHAR(100) NOT NULL
         )
         ''')
