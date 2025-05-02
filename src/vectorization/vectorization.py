@@ -202,3 +202,15 @@ def create_embeddings_from_preferences(preferences):
     response = text_from_user_restaurant_preferences(preferences)
     restaurant_vector = creating_embeddings_from_text(response)
     return restaurant_vector
+
+def average_embedding(embeddings):
+    """
+    Calculate the average of a list of embeddings.
+    """
+    if not embeddings:
+        return None
+    average_embedding = []
+    for x in range(len(embeddings[0])):
+        average_embedding.append(sum([embedding[x] for embedding in embeddings]) / len(embeddings))
+
+    return average_embedding

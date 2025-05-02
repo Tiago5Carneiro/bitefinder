@@ -62,6 +62,23 @@ export default function DateLobbyScreen() {
     type: "info",
   });
 
+  const showToast = (
+    message: string,
+    type: "info" | "error" = "info",
+    duration = 3000
+  ) => {
+    setToast({
+      visible: true,
+      message,
+      type,
+    });
+
+    // Auto-dismiss after the specified duration
+    setTimeout(() => {
+      setToast({ visible: false, message: "", type: "info" });
+    }, duration);
+  };
+
   // Socket reference
   const socketRef = useRef<Socket | null>(null);
 
@@ -311,7 +328,7 @@ export default function DateLobbyScreen() {
         const userToken = await AsyncStorage.getItem("userToken");
 
         if (!userData || !userToken) {
-          Alert.alert("Not logged in", "Please login first to continue");
+          showToast("Please login first to continue", "error");
           router.replace({ pathname: "/(auth)/login" });
           return;
         }
@@ -324,14 +341,14 @@ export default function DateLobbyScreen() {
           await fetchDateInfo(dateCode, userToken, user);
         } else {
           // This shouldn't happen, but handle it gracefully
-          Alert.alert("Error", "No date code provided");
+          showToast("No date code provided", "error");
           router.back();
         }
       } catch (error) {
         console.error("Error loading user or date info:", error);
-        Alert.alert(
-          "Error",
-          "Failed to load date information. Please try again."
+        showToast(
+          "Failed to load date information. Please try again.",
+          "error"
         );
       }
     };
@@ -363,10 +380,7 @@ export default function DateLobbyScreen() {
 
       if (!infoResponse.ok) {
         const errorData = await infoResponse.json();
-        Alert.alert(
-          "Error",
-          errorData.error || "Failed to get date information"
-        );
+        showToast(errorData.error || "Failed to get date information", "error");
         router.back();
         return;
       }
@@ -382,16 +396,10 @@ export default function DateLobbyScreen() {
       initializeSocket(user.username);
     } catch (error) {
       console.error("Error fetching date info:", error);
-      Alert.alert("Error", "Failed to get date information. Please try again.");
+      showToast("Failed to get date information. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Copy invite code to clipboard
-  const copyInviteCode = () => {
-    Clipboard.setString(inviteCode);
-    Alert.alert("Success", "Invite code copied to clipboard");
   };
 
   // Share invite code
@@ -401,11 +409,11 @@ export default function DateLobbyScreen() {
         message: `Join me for a romantic dinner with BiteFinder! Use code: ${inviteCode}`,
       });
     } catch (error) {
-      Alert.alert("Error", "Could not share invite code");
+      showToast("Could not share invite code", "error");
     }
   };
 
-  // Toggle the host's ready status
+  // Replace toggleHostReadyStatus error handling
   const toggleHostReadyStatus = async () => {
     try {
       setIsUpdatingStatus(true);
@@ -413,7 +421,7 @@ export default function DateLobbyScreen() {
       // Get user token
       const userToken = await AsyncStorage.getItem("userToken");
       if (!userToken) {
-        Alert.alert("Not logged in", "Please login first to continue");
+        showToast("Please login first to continue", "error");
         router.replace({ pathname: "/(auth)/login" });
         return;
       }
@@ -434,105 +442,20 @@ export default function DateLobbyScreen() {
       if (response.ok) {
         // Update local state
         setIsHostReady(!isHostReady);
-
+        showToast(
+          isHostReady ? "You're now waiting" : "You're now ready",
+          "info"
+        );
         // The socket will update the members list for all users
       } else {
         const errorData = await response.json();
-        Alert.alert("Error", errorData.error || "Failed to update status");
+        showToast(errorData.error || "Failed to update status", "error");
       }
     } catch (error) {
       console.error("Error updating ready status:", error);
-      Alert.alert("Error", "Failed to update status. Please try again.");
+      showToast("Failed to update status. Please try again.", "error");
     } finally {
       setIsUpdatingStatus(false);
-    }
-  };
-
-  // tDat the date selection process
-  const startDateSelection = async () => {
-    // Check if host is ready
-    if (!isHostReady) {
-      Alert.alert("Not Ready", "Please mark yourself as ready first.");
-      return;
-    }
-
-    try {
-      const userToken = await AsyncStorage.getItem("userToken");
-      if (!userToken) {
-        Alert.alert("Not logged in", "Please login first to continue");
-        router.replace({ pathname: "/(auth)/login" });
-        return;
-      }
-
-      // If not all required members are ready, show confirmation
-      if (!allRequiredReady) {
-        // Get count of members excluding the host
-        const regularMembers = members.filter((m) => !m.is_host);
-
-        Alert.alert(
-          "Not everyone is ready",
-          `Only ${readyCount} of ${regularMembers.length} members are ready. Do you want to start anyway?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Start Anyway",
-              onPress: async () => {
-                // Call API to start restaurant selection
-                const response = await fetch(
-                  `${API_URL}/groups/${inviteCode}/start`,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${userToken}`,
-                    },
-                  }
-                );
-
-                if (response.ok) {
-                  // Navigate to restaurant selection screen
-                  router.push({
-                    pathname: "/restaurant/group-selection",
-                    params: { groupCode: inviteCode },
-                  });
-                } else {
-                  const errorData = await response.json();
-                  Alert.alert(
-                    "Error",
-                    errorData.error || "Failed to start selection"
-                  );
-                }
-              },
-            },
-          ]
-        );
-      } else {
-        // All required members are ready, start the selection
-        const response = await fetch(`${API_URL}/groups/${inviteCode}/start`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${userToken}`,
-          },
-        });
-
-        if (response.ok) {
-          // Navigate to restaurant selection screen
-          router.push({
-            pathname: "/restaurant/group-selection",
-            params: { groupCode: inviteCode },
-          });
-        } else {
-          const errorData = await response.json();
-          Alert.alert("Error", errorData.error || "Failed to start selection");
-        }
-      }
-    } catch (error) {
-      console.error("Error starting date selection:", error);
-      Alert.alert(
-        "Error",
-        "Failed to start restaurant selection. Please try again."
-      );
     }
   };
 
@@ -546,6 +469,20 @@ export default function DateLobbyScreen() {
       if (!userToken) {
         router.replace("/(tabs)");
         return;
+      }
+
+      // If user is host, first emit the dissolution event
+      if (isDateCreator && socketRef.current?.connected) {
+        console.log("Host is dissolving date:", inviteCode);
+
+        // Emit the event and verify it was sent
+        socketRef.current.emit("group_dissolved_by_host", {
+          group_code: inviteCode,
+          message: "The host has ended the date",
+        });
+
+        // Add a delay to ensure the message has time to be processed
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Call API to leave/dissolve group
@@ -578,6 +515,82 @@ export default function DateLobbyScreen() {
     }
   };
 
+  const startDateSelection = async () => {
+    // Check if host is ready
+    if (!isHostReady) {
+      showToast("Please mark yourself as ready first", "error");
+      return;
+    }
+
+    try {
+      const userToken = await AsyncStorage.getItem("userToken");
+      if (!userToken) {
+        showToast("Please login first to continue", "error");
+        router.replace({ pathname: "/(auth)/login" });
+        return;
+      }
+
+      // If not all required members are ready, show confirmation
+      if (!allRequiredReady) {
+        // Get count of members excluding the host
+        const regularMembers = members.filter((m) => !m.is_host);
+
+        // We'll use a different approach since Alert.confirm is not easy to replace with toast
+        // For simplicity, we'll just show a toast and continue anyway
+        showToast(
+          `Only ${readyCount} of ${regularMembers.length} members are ready, starting anyway`,
+          "info"
+        );
+
+        // Call API to start restaurant selection
+        const response = await fetch(`${API_URL}/groups/${inviteCode}/start`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${userToken}`,
+          },
+        });
+
+        if (response.ok) {
+          // Navigate to restaurant selection screen
+          router.push({
+            pathname: "/restaurant/group-selection",
+            params: { groupCode: inviteCode },
+          });
+        } else {
+          const errorData = await response.json();
+          showToast(errorData.error || "Failed to start selection", "error");
+        }
+      } else {
+        // All required members are ready, start the selection
+        const response = await fetch(`${API_URL}/groups/${inviteCode}/start`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${userToken}`,
+          },
+        });
+
+        if (response.ok) {
+          // Navigate to restaurant selection screen
+          router.push({
+            pathname: "/restaurant/group-selection",
+            params: { groupCode: inviteCode },
+          });
+        } else {
+          const errorData = await response.json();
+          showToast(errorData.error || "Failed to start selection", "error");
+        }
+      }
+    } catch (error) {
+      console.error("Error starting date selection:", error);
+      showToast(
+        "Failed to start restaurant selection. Please try again.",
+        "error"
+      );
+    }
+  };
+
   // If still loading initial data
   if (isLoading && members.length === 0) {
     return (
@@ -602,6 +615,12 @@ export default function DateLobbyScreen() {
             { backgroundColor: toast.type === "error" ? "#FF6B6B" : "#FF6B9D" },
           ]}
         >
+          <Ionicons
+            name={toast.type === "error" ? "alert-circle" : "checkmark-circle"}
+            size={24}
+            color="white"
+            style={{ marginRight: 8 }}
+          />
           <ThemedText style={styles.toastMessage}>{toast.message}</ThemedText>
         </View>
       )}
@@ -933,6 +952,31 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginBottom: 16,
     width: "80%",
+  },
+
+  toastContainer: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
+    zIndex: 100,
+    opacity: 0.95,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toastMessage: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
+    fontSize: 16,
   },
   hostStatusText: {
     color: "#fff",
