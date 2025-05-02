@@ -8,6 +8,8 @@
 import os 
 from dotenv import load_dotenv
 
+import json
+
 from google.maps import places_v1
 from google.api_core.client_options import ClientOptions
 from google.type import latlng_pb2
@@ -58,4 +60,4 @@ def sample_get_place(api_key_string):
     # Handle the response
     return resp_dic
 
-print(sample_get_place(os.getenv("KEY")))
+print(json.dumps(sample_get_place(os.getenv("KEY"))))
