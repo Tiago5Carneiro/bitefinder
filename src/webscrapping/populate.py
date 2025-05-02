@@ -1,7 +1,11 @@
 import json
 import os 
 import dotenv
+import sys
 import mysql.connector
+
+sys.path.insert(0,"../vectorization")
+import vectorization as vect
 
 dotenv.load_dotenv()
 
@@ -71,4 +75,49 @@ type,reservable,vegetarian,summary)
 
     conn.close()
 
+def find_near_preference(user):
+    
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USERNAME"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_DATABASE"),
+        port=int(os.getenv("DB_PORT")))
+
+    cursor = conn.cursor()
+
+    preferences_query = '''
+        SELECT preference FROM user_preference WHERE user_id = %s 
+    '''
+
+    cursor.execute(preferences_query,(user,))
+
+    result = cursor.fetchall()
+
+    cursor.close()
+
+    cursor = conn.cursor()
+
+    pref_list = []
+    for r in result:
+        pref_list.append(r[0])
+
+    vec = vect.create_embeddings_from_preferences(str(pref_list))
+
+    cursor.execute("Set @query_vec = (%s):>VECTOR(4096)",(json.dumps(vec),))
+
+    near_query = '''
+        Select name, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5
+    '''
+
+    cursor.execute(near_query)
+
+    resp = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+
+    print(resp)
+
+    
         
