@@ -134,7 +134,7 @@ def init_db():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_restaurant (
             username VARCHAR(100),
-            restaurant_id INT,
+            restaurant_id VARCHAR(100),
             PRIMARY KEY (username, restaurant_id)
         )
         ''')
@@ -142,9 +142,9 @@ def init_db():
         # Create user_preference table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_preference (
-            user_id INT,
+            username VARCHAR(100),
             preference VARCHAR(100),
-            PRIMARY KEY (user_id,preference)
+            PRIMARY KEY (username,preference)
         )
         ''')
         
