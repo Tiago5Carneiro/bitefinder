@@ -8,6 +8,8 @@ import jwt
 import datetime
 import random
 import string
+from flask_socketio import SocketIO, join_room, leave_room, emit
+
 
 # Load environment variables
 load_dotenv()
@@ -83,6 +85,8 @@ def init_db():
             code VARCHAR(10) PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             status ENUM('active', 'inactive') NOT NULL,
+            creator_username VARCHAR(100) NOT NULL,
+            max_members INT DEFAULT 6,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
@@ -92,6 +96,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS group_user (
             group_code VARCHAR(10),
             username VARCHAR(100),
+            is_ready BOOLEAN DEFAULT FALSE,
             PRIMARY KEY (group_code, username)
         )
         ''')
@@ -128,6 +133,7 @@ def init_db():
 # Add this right after defining the app
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Initialize database tables
 init_db()
@@ -137,7 +143,26 @@ JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")  # Change in production
 JWT_EXPIRATION_DAYS = 7
 
 
+# Add WebSocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
 
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+@socketio.on('join_group')
+def handle_join_group(data):
+    room = data['group_code']
+    join_room(room)
+    print(f'Client joined room: {room}')
+
+@socketio.on('leave_group')
+def handle_leave_group(data):
+    room = data['group_code']
+    leave_room(room)
+    print(f'Client left room: {room}')
 
 # Helper functions
 def hash_password(password):
@@ -276,8 +301,8 @@ def create_group():
         
         # Create the group
         cursor.execute(
-            "INSERT INTO `group` (code, name, status) VALUES (%s, %s, 'active')",
-            (code, name)
+            "INSERT INTO `group` (code, name, status, creator_username) VALUES (%s, %s, 'active', %s)",
+            (code, name, username)
         )
         
         # Add the creator to the group
@@ -292,6 +317,7 @@ def create_group():
             'message': 'Group created successfully',
             'code': code,
             'name': name
+
         }), 201
     
     except Exception as e:
@@ -491,11 +517,13 @@ def get_group_members(code):
         if not group:
             return jsonify({'error': 'Group not found'}), 404
         
-        # Get all members of the group
+        # Get all members of the group with their ready status
         cursor.execute("""
-            SELECT u.username, u.name
+            SELECT u.username, u.name, gu.is_ready, 
+                   (u.username = g.creator_username) as is_host
             FROM user u
             JOIN group_user gu ON u.username = gu.username
+            JOIN `group` g ON gu.group_code = g.code
             WHERE gu.group_code = %s
         """, (code,))
         
@@ -549,31 +577,41 @@ def update_ready_status(code):
     cursor = conn.cursor()
     
     try:
-        # Check if the group exists
-        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
-        group = cursor.fetchone()
-        
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
-            
-        # Check if user is in the group
-        cursor.execute(
-            "SELECT * FROM group_user WHERE group_code = %s AND username = %s", 
-            (code, username)
-        )
-        
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not in group'}), 404
-            
-        # Update user's ready status
+        # Update ready status
         cursor.execute(
             "UPDATE group_user SET is_ready = %s WHERE group_code = %s AND username = %s",
             (is_ready, code, username)
         )
         
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'User not found in group'}), 404
+            
         conn.commit()
         
-        return jsonify({'message': 'Ready status updated successfully'}), 200
+        cursor.execute("""
+            SELECT u.username, u.name, gu.is_ready, 
+                (u.username = g.creator_username) as is_host
+            FROM user u
+            JOIN group_user gu ON u.username = gu.username
+            JOIN `group` g ON gu.group_code = g.code
+            WHERE gu.group_code = %s
+        """, (code,))
+        
+        # Ensure consistent format for members data
+        members = []
+        for row in cursor.fetchall():
+            members.append({
+                'username': row[0],  # or row['username'] if using dictionary cursor
+                'name': row[1],      # or row['name']
+                'is_ready': bool(row[2]),  # Convert to boolean
+                'is_host': bool(row[3])    # Convert to boolean
+            })
+        
+        # Emit update to all clients in the group room
+        socketio.emit('members_update', {'members': members}, room=code)
+    
+        
+        return jsonify({'success': True, 'is_ready': is_ready}), 200
         
     except Exception as e:
         conn.rollback()
@@ -583,7 +621,6 @@ def update_ready_status(code):
         cursor.close()
         conn.close()
 
-# Endpoint para sair do grupo
 @app.route('/groups/<code>/leave', methods=['POST'])
 def leave_group(code):
     data = request.get_json()
@@ -592,6 +629,7 @@ def leave_group(code):
         return jsonify({'error': 'Missing username'}), 400
         
     username = data['username']
+    is_host = data.get('is_host', False)
     
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -616,22 +654,107 @@ def leave_group(code):
         # Check if user is the host/creator
         is_creator = (group['creator_username'] == username)
         
-        if is_creator:
+        if is_creator or is_host:
             # If the user is the creator, mark the group as inactive
             cursor.execute(
-                "UPDATE `group` SET active = 0 WHERE code = %s",
+                "UPDATE `group` SET status = 'inactive' WHERE code = %s",
                 (code,)
             )
+            
+            # Notify all clients in the group to redirect to home
+            socketio.emit('group_dissolved', {
+                'message': 'The host has dissolved the group'
+            }, room=code)
+            
+            # Don't call leave_room here - it's an HTTP request
         else:
+            # Get user details for notification
+            cursor.execute("SELECT name FROM user WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            user_name = user.get('name', username) if user else username
+            
             # Remove the user from the group
             cursor.execute(
                 "DELETE FROM group_user WHERE group_code = %s AND username = %s",
                 (code, username)
             )
             
+            # Notify other members that someone left
+            socketio.emit('member_left', {
+                'username': username,
+                'name': user_name,
+                'message': f"{user_name} has left the group"
+            }, room=code)
+            
+            # Don't call leave_room here - it's an HTTP request
+            
+            # Get updated member list
+            cursor.execute("""
+                SELECT u.username, u.name, gu.is_ready, 
+                    (u.username = g.creator_username) as is_host
+                FROM user u
+                JOIN group_user gu ON u.username = gu.username
+                JOIN `group` g ON gu.group_code = g.code
+                WHERE gu.group_code = %s
+            """, (code,))
+            
+            # Format members consistently
+            members = []
+            for row in cursor.fetchall():
+                members.append({
+                    'username': row['username'],
+                    'name': row['name'],
+                    'is_ready': bool(row['is_ready']),
+                    'is_host': bool(row['is_host'])
+                })
+            
+            # Emit updated member list
+            socketio.emit('members_update', {'members': members}, room=code)
+            
         conn.commit()
         
         return jsonify({'message': 'Successfully left group'}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error in leave_group: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+        
+# Add a new endpoint to update group status explicitly
+@app.route('/groups/<code>/status', methods=['POST'])
+def update_group_status(code):
+    data = request.get_json()
+    
+    if 'status' not in data:
+        return jsonify({'error': 'Missing status'}), 400
+        
+    status = data['status']
+    if status not in ['active', 'inactive']:
+        return jsonify({'error': 'Invalid status value'}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Update group status
+        cursor.execute(
+            "UPDATE `group` SET status = %s WHERE code = %s",
+            (status, code)
+        )
+        
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Group not found'}), 404
+            
+        conn.commit()
+        
+        # Notify clients about status change
+        socketio.emit('group_status_update', {'status': status}, room=code)
+        
+        return jsonify({'message': f'Group status updated to {status}'}), 200
         
     except Exception as e:
         conn.rollback()
@@ -640,6 +763,7 @@ def leave_group(code):
     finally:
         cursor.close()
         conn.close()
+
 
 # Endpoint para iniciar a seleção de restaurantes
 @app.route('/groups/<code>/start', methods=['POST'])
@@ -685,4 +809,4 @@ def start_restaurant_selection(code):
         conn.close()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
