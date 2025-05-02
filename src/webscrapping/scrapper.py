@@ -26,7 +26,7 @@ def sample_get_place(api_key_string):
     center_coimbra = latlng_pb2.LatLng(latitude=40.2115, longitude=-8.4292 )
     center_porto = latlng_pb2.LatLng(latitude=41.15, longitude=-8.61024 )
     center_lisboa = latlng_pb2.LatLng(latitude=38.7071, longitude=-9.13549 )
-    circle = places_v1.Circle(center = center_lisboa, radius = 10000)
+    circle = places_v1.Circle(center = center_coimbra, radius = 10000)
     restriction = places_v1.SearchNearbyRequest.LocationRestriction()
     restriction.circle = circle
 
@@ -37,7 +37,7 @@ def sample_get_place(api_key_string):
 
     # Make the request
     resp_dic = {}
-    response = client.search_nearby(request=request, metadata=[("x-goog-fieldmask", "places.displayName,places.photos,places.priceRange,places.priceLevel,places.rating,places.googleMapsUri,places.primaryType,places.id")])
+    response = client.search_nearby(request=request, metadata=[("x-goog-fieldmask", "places.displayName,places.photos,places.priceRange,places.priceLevel,places.rating,places.googleMapsUri,places.primaryType,places.id,places.reservable,places.userRatingCount,places.servesVegetarianFood,places.editorialSummary,places.currentOpeningHours")])
 
     place_list = []
 
@@ -49,13 +49,22 @@ def sample_get_place(api_key_string):
             photo_resp = client.get_photo_media(request = photo_req)
             photo_list.append(photo_resp.photo_uri)
 
+        day_list = []
+        for day in place.current_opening_hours.weekday_descriptions:
+            day_list.append(day)
+
         resp_dic[place.id] = {"displayName": place.display_name.text,
                               "priceRange": {"start": place.price_range.start_price.units, "end": place.price_range.end_price.units},
                               "priceLevel": place.price_level,
                               "rating": place.rating,
                               "mapsURI": place.google_maps_uri,
                               "photos": photo_list,
-                              "primaryType": place.primary_type}
+                              "primaryType": place.primary_type,
+                              "reservable": place.reservable,
+                              "userRatingCount": place.user_rating_count,
+                              "vegetarian": place.serves_vegetarian_food,
+                              "summary": place.editorial_summary.text,
+                              "openingHours": day_list} 
 
     # Handle the response
     return resp_dic
