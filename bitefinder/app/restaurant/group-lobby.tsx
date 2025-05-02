@@ -78,6 +78,9 @@ export default function GroupLobbyScreen() {
               setIsReady(true);
               updateHostReadyStatus(true);
             }
+
+            // Only initialize socket after we have user data
+            initializeSocket(user.username);
           }
         }
       } catch (error) {
@@ -88,69 +91,7 @@ export default function GroupLobbyScreen() {
     loadUserData();
     fetchGroupMembers();
 
-    // Initialize Socket.io connection
-    const socket = io(API_URL);
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("Connected to WebSocket server");
-      // Join the room with the same event name and payload format
-      socket.emit("join_group", { group_code: groupCode });
-      console.log(`Joined room: ${groupCode}`);
-    });
-
-    // Handler para atualização de membros
-    socket.on("members_update", (data) => {
-      console.log("Received members update:", data);
-
-      // Verificar se temos um array de membros
-      if (data && Array.isArray(data.members)) {
-        // Transformar arrays em objetos
-        const formattedMembers = data.members
-          .map((member: Member | any[]) => {
-            // Verificar se é um array ou já é um objeto
-            if (Array.isArray(member)) {
-              // Se for array, assumir a ordem: [username, name, is_ready, is_host]
-              return {
-                username: member[0] || "",
-                name: member[1] || "",
-                is_ready: Boolean(member[2]),
-                is_host: Boolean(member[3]),
-              };
-            } else if (typeof member === "object" && member !== null) {
-              // Se já for um objeto, usar diretamente
-              return member;
-            }
-            return null;
-          })
-          .filter((member: Member | null) => member !== null);
-
-        console.log("Formatted members:", formattedMembers);
-
-        // Atualizar estado com os membros formatados
-        setMembers(formattedMembers);
-
-        // Verificar se todos estão prontos
-        const allMembersReady = formattedMembers.every(
-          (m: Member) => m.is_ready
-        );
-        setAllReady(allMembersReady && formattedMembers.length > 0);
-
-        // Atualizar status do usuário atual
-        if (currentUser?.username) {
-          const currentMember = formattedMembers.find(
-            (m: Member) => m.username === currentUser.username
-          );
-          if (currentMember) {
-            setIsReady(currentMember.is_ready);
-          }
-        }
-      } else {
-        console.error("Invalid members data format:", data);
-      }
-    });
-
-    // Cleanup on unmount
+    // Clean up function
     return () => {
       if (socketRef.current) {
         // Explicitly leave room before disconnecting
@@ -184,14 +125,107 @@ export default function GroupLobbyScreen() {
   // Update members effect to count ready members
   useEffect(() => {
     if (members.length > 0) {
-      const readyMembers = members.filter((m) => m.is_ready).length;
-      setReadyCount(readyMembers);
+      // Filter out the host from the count
+      const regularMembers = members.filter((m) => !m.is_host);
+      const readyRegularMembers = regularMembers.filter(
+        (m) => m.is_ready
+      ).length;
 
-      // Check if all members are ready
-      setAllReady(readyMembers === members.length && members.length > 0);
+      setReadyCount(readyRegularMembers);
+
+      // Check if all non-host members are ready
+      setAllReady(
+        readyRegularMembers === regularMembers.length &&
+          regularMembers.length > 0
+      );
     }
   }, [members]);
 
+  // New function to initialize socket with username
+  const initializeSocket = (username) => {
+    // Initialize Socket.io connection
+    const socket = io(API_URL);
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("Connected to WebSocket server");
+      // Join the room with username included
+      socket.emit("join_group", {
+        group_code: groupCode,
+        username: username,
+      });
+      console.log(`Joined room: ${groupCode} as ${username}`);
+    });
+
+    // Handler for members update
+    socket.on("members_update", (data) => {
+      console.log("Received members update:", data);
+
+      // Verify we have a members array
+      if (data && Array.isArray(data.members)) {
+        // Transform arrays to objects if needed
+        const formattedMembers = data.members
+          .map((member) => {
+            // Check if it's an array or already an object
+            if (Array.isArray(member)) {
+              // If array, assume order: [username, name, is_ready, is_host]
+              return {
+                username: member[0] || "",
+                name: member[1] || "",
+                is_ready: Boolean(member[2]),
+                is_host: Boolean(member[3]),
+              };
+            } else if (typeof member === "object" && member !== null) {
+              // If already an object, use directly
+              return member;
+            }
+            return null;
+          })
+          .filter((member) => member !== null);
+
+        console.log("Formatted members:", formattedMembers);
+
+        // Update state with formatted members
+        setMembers(formattedMembers);
+
+        // Check if all non-host members are ready
+        const regularMembers = formattedMembers.filter((m) => !m.is_host);
+        const allRegularMembersReady = regularMembers.every((m) => m.is_ready);
+        setAllReady(allRegularMembersReady && regularMembers.length > 0);
+
+        // Update current user's status
+        if (currentUser?.username) {
+          const currentMember = formattedMembers.find(
+            (m) => m.username === currentUser.username
+          );
+          if (currentMember) {
+            setIsReady(currentMember.is_ready);
+          }
+        }
+      } else {
+        console.error("Invalid members data format:", data);
+      }
+    });
+
+    // Add handler for user_joined event
+    socket.on("user_joined", (data) => {
+      if (data && data.username) {
+        // Show toast notification about the new user
+        setToast({
+          visible: true,
+          message:
+            data.message ||
+            `${data.name || data.username} has joined the group`,
+          type: "info",
+        });
+
+        // Toast will auto-dismiss after a few seconds
+        setTimeout(() => {
+          setToast({ visible: false, message: "", type: "info" });
+        }, 3000);
+      }
+    });
+  };
   // Update useEffect for currentUser dependency
   useEffect(() => {
     if (currentUser && members.length > 0) {
@@ -303,7 +337,7 @@ export default function GroupLobbyScreen() {
   };
 
   const startRestaurantPicking = async () => {
-    // Check if all members are ready
+    // Check if all non-host members are ready
     if (!allReady) {
       Alert.alert(
         "Not everyone is ready",
@@ -422,29 +456,13 @@ export default function GroupLobbyScreen() {
           }, 3000);
         }
       });
-
-      // Handle members_update event
-      socketRef.current.on("members_update", (data) => {
-        if (data && Array.isArray(data.members)) {
-          setMembers(data.members);
-
-          // Check if all members are ready
-          const readyCount = data.members.filter(
-            (m: Member) => m.is_ready
-          ).length;
-          setReadyCount(readyCount);
-          setAllReady(
-            readyCount === data.members.length && data.members.length > 0
-          );
-        }
-      });
     }
 
     return () => {
       if (socketRef.current) {
         socketRef.current.off("group_dissolved");
         socketRef.current.off("member_left");
-        socketRef.current.off("members_update");
+        socketRef.current.off("user_joined");
       }
     };
   }, [isHost, router]);
@@ -454,6 +472,10 @@ export default function GroupLobbyScreen() {
     if (!item || !item.name) {
       return null; // Skip rendering this item if name is missing
     }
+
+    // Get count of members excluding the host
+    const regularMembers = members.filter((m) => !m.is_host);
+    const readyRegularMembers = regularMembers.filter((m) => m.is_ready).length;
 
     return (
       <View
@@ -500,7 +522,7 @@ export default function GroupLobbyScreen() {
               {item.is_host
                 ? allReady
                   ? "All Ready"
-                  : `${readyCount}/${members.length} Ready`
+                  : `${readyRegularMembers}/${regularMembers.length} Ready`
                 : item.is_ready
                 ? "Ready"
                 : "Waiting"}
@@ -571,7 +593,7 @@ export default function GroupLobbyScreen() {
         </ThemedText>
       </View>
 
-      {/* Status Box with Ready Button - even for host */}
+      {/* Status Box - Modified for host */}
       <ThemedView style={[styles.statusBox, { backgroundColor: cardColor }]}>
         <ThemedText style={styles.statusBoxTitle}>Your Status</ThemedText>
 
@@ -621,15 +643,17 @@ export default function GroupLobbyScreen() {
             <ThemedText style={styles.hostStatusText}>
               {allReady
                 ? "Everyone is Ready!"
-                : `Waiting - ${readyCount}/${members.length} Ready`}
+                : `Waiting - ${readyCount}/${
+                    members.filter((m) => !m.is_host).length
+                  } Ready`}
             </ThemedText>
           </ThemedView>
         )}
 
         {isHost && (
           <ThemedText style={styles.hostNote}>
-            As the host, you're automatically ready. You can start the selection
-            once everyone else is ready.
+            As the host, you don't need to get ready. You can start the
+            selection once all other members are ready.
           </ThemedText>
         )}
       </ThemedView>
@@ -680,7 +704,9 @@ export default function GroupLobbyScreen() {
           >
             {allReady
               ? "Start Picking Restaurants"
-              : `Waiting for members (${readyCount}/${members.length} Ready)`}
+              : `Waiting for members (${readyCount}/${
+                  members.filter((m) => !m.is_host).length
+                } Ready)`}
           </ThemedText>
         </TouchableOpacity>
       )}

@@ -328,6 +328,8 @@ def create_group():
         cursor.close()
         conn.close()
 
+# Update the join_group route
+
 @app.route('/groups/join', methods=['POST'])
 def join_group():
     data = request.get_json()
@@ -343,8 +345,9 @@ def join_group():
     
     try:
         # Validate that user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT name FROM user WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        if not user:
             return jsonify({'error': 'User not found'}), 404
         
         # Check if the group exists and is active
@@ -364,6 +367,37 @@ def join_group():
             "INSERT INTO group_user (group_code, username) VALUES (%s, %s)",
             (code, username)
         )
+        
+        # Notify others via WebSocket that user joined
+        user_name = user['name']
+        socketio.emit('user_joined', {
+            'username': username,
+            'name': user_name,
+            'message': f"{user_name} has joined the group"
+        }, room=code)
+        
+        # Get updated member list
+        cursor.execute("""
+            SELECT u.username, u.name, gu.is_ready, 
+                (u.username = g.creator_username) as is_host
+            FROM user u
+            JOIN group_user gu ON u.username = gu.username
+            JOIN `group` g ON gu.group_code = g.code
+            WHERE gu.group_code = %s
+        """, (code,))
+        
+        # Format members consistently
+        members = []
+        for row in cursor.fetchall():
+            members.append({
+                'username': row['username'],
+                'name': row['name'],
+                'is_ready': bool(row['is_ready']),
+                'is_host': bool(row['is_host'])
+            })
+        
+        # Emit updated member list
+        socketio.emit('members_update', {'members': members}, room=code)
         
         conn.commit()
         
