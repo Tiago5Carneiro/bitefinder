@@ -6,39 +6,27 @@ import {
   Alert,
   StatusBar,
   View,
+  ActivityIndicator,
+  Share,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 
-// Mock user data - will be replaced with real data from the server
-const MOCK_USERS = [
-  {
-    id: "user1",
-    name: "Alex Johnson (Host)",
-    avatar:
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
-    status: "host",
-  },
-  {
-    id: "user2",
-    name: "You",
-    avatar:
-      "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200",
-    status: "pending", // will change to ready when user is ready
-  },
-  {
-    id: "user3",
-    name: "Sam Rodriguez",
-    avatar:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
-    status: "ready",
-  },
-];
+const API_URL = "http://localhost:5000";
+
+interface Member {
+  username: string;
+  name: string;
+  is_ready?: boolean;
+  is_host?: boolean;
+  avatar?: string;
+}
 
 export default function ParticipantLobbyScreen() {
   const params = useLocalSearchParams();
@@ -50,41 +38,234 @@ export default function ParticipantLobbyScreen() {
   const backgroundColor = useThemeColor({}, "background");
   const cardColor = useThemeColor({}, "card");
 
-  const [members, setMembers] = useState(MOCK_USERS);
+  const [members, setMembers] = useState<Member[]>([]);
   const [isReady, setIsReady] = useState(false);
-  const [isWaiting, setIsWaiting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isJoining, setIsJoining] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [joinError, setJoinError] = useState("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  // Find the current user and update their status
-  const toggleReadyStatus = () => {
-    setIsReady(!isReady);
+  // Load current user data and join group
+  useEffect(() => {
+    const loadUserAndJoinGroup = async () => {
+      try {
+        // Get user token and data
+        const userToken = await AsyncStorage.getItem("userToken");
+        const userData = await AsyncStorage.getItem("userData");
 
-    // Update the user's status in the members list
-    setMembers(
-      members.map((member) => {
-        if (member.id === "user2") {
-          // "You" is hardcoded as user2 in our mock data
+        if (!userToken || !userData) {
+          Alert.alert("Not logged in", "Please login first to join a group");
+          router.replace({ pathname: "/(auth)/login" });
+          return;
+        }
+
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+
+        // Join the group
+        await joinGroup(groupCode, user.username, userToken);
+      } catch (error) {
+        console.error("Error loading user data or joining group:", error);
+        setJoinError("Failed to join group. Please try again.");
+        setIsJoining(false);
+      }
+    };
+
+    loadUserAndJoinGroup();
+
+    // Poll for updates every 5 seconds
+    const interval = setInterval(() => {
+      if (!isJoining && !joinError) {
+        fetchGroupMembers();
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [groupCode]);
+
+  // Join the group
+  const joinGroup = async (code: string, username: string, token: string) => {
+    try {
+      setIsJoining(true);
+
+      // Call the API to join the group
+      const response = await fetch(`${API_URL}/groups/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          code: code.toUpperCase().trim(),
+          username: username,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Successfully joined the group
+        setIsJoining(false);
+        // Fetch group members
+        fetchGroupMembers();
+      } else {
+        // Failed to join group
+        setJoinError(data.error || "Failed to join group");
+        Alert.alert("Error", data.error || "Failed to join group");
+        setIsJoining(false);
+        // Navigate back to friends tab
+        setTimeout(() => {
+          router.replace({ pathname: "/(tabs)/friends" });
+        }, 1500);
+      }
+    } catch (error) {
+      console.error("Error joining group:", error);
+      setJoinError("Network error. Please try again.");
+      setIsJoining(false);
+      // Navigate back to friends tab
+      setTimeout(() => {
+        router.replace({ pathname: "/(tabs)/friends" });
+      }, 1500);
+    }
+  };
+
+  // Fetch group members
+  const fetchGroupMembers = async () => {
+    try {
+      setIsLoading(true);
+      const userToken = await AsyncStorage.getItem("userToken");
+
+      if (!userToken) {
+        Alert.alert("Not logged in", "Please login first");
+        router.replace({ pathname: "/(auth)/login" });
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/groups/${groupCode}/members`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Process members data
+        const processedMembers = (data.members || []).map((member: Member) => {
+          let avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            member.name
+          )}&background=random`;
+
           return {
             ...member,
-            status: isReady ? "pending" : "ready",
+            avatar: avatarUrl,
           };
-        }
-        return member;
-      })
-    );
+        });
 
-    // Send ready status to server (simulated)
-    setIsWaiting(true);
-    setTimeout(() => {
-      setIsWaiting(false);
-    }, 500);
+        setMembers(processedMembers);
+
+        // Update current user's ready status
+        const currentMember = processedMembers.find(
+          (m: Member) => m.username === currentUser?.username
+        );
+        if (currentMember) {
+          setIsReady(currentMember.is_ready || false);
+        }
+
+        // Check if group selection has started
+        if (data.group_status === "selecting") {
+          // Navigate to restaurant selection screen
+          router.replace({
+            pathname: "/restaurant/group-selection",
+            params: { groupCode },
+          });
+        }
+      } else {
+        const errorData = await response.json();
+
+        // If group is inactive, return to friends page
+        if (errorData.error === "Group is inactive") {
+          Alert.alert(
+            "Group Inactive",
+            "The host has left the group. The group is now inactive.",
+            [
+              {
+                text: "OK",
+                onPress: () => router.replace({ pathname: "/(tabs)/friends" }),
+              },
+            ]
+          );
+          return;
+        }
+
+        Alert.alert(
+          "Error",
+          errorData.error || "Failed to fetch group members"
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching group members:", error);
+      Alert.alert("Error", "Failed to fetch group members. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Toggle ready status
+  const toggleReadyStatus = async () => {
+    try {
+      setUpdatingStatus(true);
+      const userToken = await AsyncStorage.getItem("userToken");
+
+      // Call API to update ready status
+      const response = await fetch(`${API_URL}/groups/${groupCode}/ready`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          username: currentUser.username,
+          is_ready: !isReady,
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setIsReady(!isReady);
+
+        // Update the user's status in the members list
+        setMembers(
+          members.map((member) => {
+            if (member.username === currentUser?.username) {
+              return {
+                ...member,
+                is_ready: !isReady,
+              };
+            }
+            return member;
+          })
+        );
+      } else {
+        const errorData = await response.json();
+        Alert.alert("Error", errorData.error || "Failed to update status");
+      }
+    } catch (error) {
+      console.error("Error updating ready status:", error);
+      Alert.alert("Error", "Failed to update ready status. Please try again.");
+    } finally {
+      setUpdatingStatus(false);
+    }
   };
 
   // Navigate back to friends tab
   const navigateToFriends = () => {
-    router.navigate("/(tabs)/friends");
+    router.replace("/(tabs)/friends");
   };
 
-  // Leave the group with confirmation
+  // Leave the group
   const leaveGroup = () => {
     Alert.alert(
       "Leave Group",
@@ -94,30 +275,79 @@ export default function ParticipantLobbyScreen() {
         {
           text: "Leave",
           style: "destructive",
-          onPress: () => {
-            // Simulate leaving group on the server
-            setTimeout(() => {
-              // Navigate back to friends tab after successfully leaving
+          onPress: async () => {
+            try {
+              const userToken = await AsyncStorage.getItem("userToken");
+
+              if (!userToken) {
+                navigateToFriends();
+                return;
+              }
+
+              // Call API to leave group
+              const response = await fetch(
+                `${API_URL}/groups/${groupCode}/leave`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${userToken}`,
+                  },
+                  body: JSON.stringify({
+                    username: currentUser.username,
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                navigateToFriends();
+              } else {
+                const errorData = await response.json();
+                Alert.alert(
+                  "Error",
+                  errorData.error || "Failed to leave group"
+                );
+                navigateToFriends();
+              }
+            } catch (error) {
+              console.error("Error leaving group:", error);
+              Alert.alert("Error", "Failed to leave group. Please try again.");
               navigateToFriends();
-            }, 300);
+            }
           },
         },
       ]
     );
   };
 
-  // Effect to simulate a host starting the selection
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // This would normally be triggered by a websocket event from the server
-      // when the host starts the selection process
-      if (Math.random() > 0.7 && isReady) {
-        router.push("/restaurant/group-selection");
-      }
-    }, 10000);
+  // Show loading screen while joining group
+  if (isJoining) {
+    return (
+      <ThemedView style={styles.loadingContainer}>
+        <ActivityIndicator
+          size="large"
+          color={tintColor}
+          style={styles.loadingIndicator}
+        />
+        <ThemedText style={styles.loadingText}>Joining group...</ThemedText>
+      </ThemedView>
+    );
+  }
 
-    return () => clearTimeout(timer);
-  }, [isReady]);
+  // Show error screen if joining failed
+  if (joinError) {
+    return (
+      <ThemedView style={styles.loadingContainer}>
+        <Ionicons name="alert-circle-outline" size={50} color="#FF6B6B" />
+        <ThemedText style={[styles.loadingText, { color: "#FF6B6B" }]}>
+          {joinError}
+        </ThemedText>
+        <ThemedText style={styles.subErrorText}>
+          Returning to friends page...
+        </ThemedText>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -150,6 +380,22 @@ export default function ParticipantLobbyScreen() {
           <ThemedView style={styles.codeBox}>
             <ThemedText style={styles.codeText}>{groupCode}</ThemedText>
           </ThemedView>
+
+          <TouchableOpacity
+            style={[styles.shareButton, { backgroundColor: tintColor }]}
+            onPress={async () => {
+              try {
+                await Share.share({
+                  message: `Join my restaurant picking group in BiteFinder! Group code: ${groupCode}`,
+                });
+              } catch (error) {
+                Alert.alert("Error", "Could not share group code");
+              }
+            }}
+          >
+            <Ionicons name="share-outline" size={20} color="white" />
+            <ThemedText style={styles.shareButtonText}>Share</ThemedText>
+          </TouchableOpacity>
         </ThemedView>
 
         <ThemedText style={styles.statusMessage}>
@@ -169,10 +415,15 @@ export default function ParticipantLobbyScreen() {
             { backgroundColor: isReady ? "#4CAF50" : "#FFC107" },
           ]}
           onPress={toggleReadyStatus}
-          disabled={isWaiting}
+          disabled={updatingStatus}
         >
-          {isWaiting ? (
-            <ThemedText style={styles.readyButtonText}>Updating...</ThemedText>
+          {updatingStatus ? (
+            <View style={styles.updatingContainer}>
+              <ActivityIndicator color="white" size="small" />
+              <ThemedText style={styles.readyButtonText}>
+                Updating...
+              </ThemedText>
+            </View>
           ) : (
             <>
               <Ionicons
@@ -195,53 +446,98 @@ export default function ParticipantLobbyScreen() {
 
       {/* Members List */}
       <ThemedView style={styles.membersSection}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          Group Members ({members.length})
-        </ThemedText>
+        <View style={styles.membersHeader}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            Group Members ({members.length})
+          </ThemedText>
 
-        <FlatList
-          data={members}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ThemedView
-              style={[styles.memberCard, { backgroundColor: cardColor }]}
-            >
-              <Image
-                source={{ uri: item.avatar }}
-                style={styles.avatar}
-                contentFit="cover"
-                transition={200}
-              />
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={fetchGroupMembers}
+          >
+            <Ionicons name="refresh-outline" size={20} color={textColor} />
+          </TouchableOpacity>
+        </View>
 
-              <ThemedView style={styles.memberInfo}>
-                <ThemedText style={styles.memberName}>{item.name}</ThemedText>
-
-                <ThemedView
-                  style={[
-                    styles.statusBadge,
-                    {
-                      backgroundColor:
-                        item.status === "host"
+        {isLoading ? (
+          <View style={styles.loadingMembersContainer}>
+            <ActivityIndicator color={tintColor} />
+            <ThemedText style={styles.loadingMembersText}>
+              Loading members...
+            </ThemedText>
+          </View>
+        ) : (
+          <FlatList
+            data={members}
+            keyExtractor={(item) => item.username}
+            renderItem={({ item }) => (
+              <ThemedView
+                style={[styles.memberCard, { backgroundColor: cardColor }]}
+              >
+                {item.avatar ? (
+                  <Image
+                    source={{ uri: item.avatar }}
+                    style={styles.avatar}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatarPlaceholder,
+                      {
+                        backgroundColor: item.is_host
                           ? "#4ECDC4"
-                          : item.status === "ready"
+                          : item.is_ready
                           ? "#4CAF50"
                           : "#FFC107",
-                    },
-                  ]}
-                >
-                  <ThemedText style={styles.statusText}>
-                    {item.status === "host"
-                      ? "Host"
-                      : item.status === "ready"
-                      ? "Ready"
-                      : "Waiting"}
+                      },
+                    ]}
+                  >
+                    <ThemedText style={styles.avatarInitial}>
+                      {item.name.charAt(0).toUpperCase()}
+                    </ThemedText>
+                  </View>
+                )}
+
+                <ThemedView style={styles.memberInfo}>
+                  <ThemedText style={styles.memberName}>
+                    {item.name}
+                    {item.username === currentUser?.username ? " (You)" : ""}
+                    {item.is_host && " • Host"}
                   </ThemedText>
+
+                  <ThemedView
+                    style={[
+                      styles.statusBadge,
+                      {
+                        backgroundColor: item.is_host
+                          ? "#4ECDC4"
+                          : item.is_ready
+                          ? "#4CAF50"
+                          : "#FFC107",
+                      },
+                    ]}
+                  >
+                    <ThemedText style={styles.statusText}>
+                      {item.is_host
+                        ? "Host"
+                        : item.is_ready
+                        ? "Ready"
+                        : "Waiting"}
+                    </ThemedText>
+                  </ThemedView>
                 </ThemedView>
               </ThemedView>
-            </ThemedView>
-          )}
-          contentContainerStyle={styles.membersList}
-        />
+            )}
+            contentContainerStyle={styles.membersList}
+            ListEmptyComponent={
+              <ThemedText style={styles.emptyText}>
+                No members found. Try refreshing the list.
+              </ThemedText>
+            }
+          />
+        )}
       </ThemedView>
 
       {/* Leave Button at bottom */}
@@ -263,8 +559,35 @@ export default function ParticipantLobbyScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ...existing styles...
+  updatingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // ...rest of existing styles...
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingIndicator: {
+    marginBottom: 20,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  subErrorText: {
+    fontSize: 14,
+    opacity: 0.7,
+    textAlign: "center",
   },
   header: {
     flexDirection: "row",
@@ -311,6 +634,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
+    gap: 10,
   },
   codeBox: {
     backgroundColor: "rgba(78, 205, 196, 0.1)",
@@ -323,6 +647,18 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     textAlign: "center",
     letterSpacing: 1,
+  },
+  shareButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  shareButtonText: {
+    color: "white",
+    marginLeft: 5,
+    fontWeight: "600",
   },
   statusMessage: {
     fontSize: 14,
@@ -364,6 +700,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+    marginLeft: 5,
   },
   waitingText: {
     fontSize: 13,
@@ -374,10 +711,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flex: 1,
   },
+  membersHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  refreshButton: {
+    padding: 8,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    marginBottom: 12,
   },
   membersList: {
     paddingBottom: 20,
@@ -393,6 +738,18 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
+  },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInitial: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "bold",
   },
   memberInfo: {
     flex: 1,
@@ -432,5 +789,20 @@ const styles = StyleSheet.create({
   leaveButtonText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  loadingMembersContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
+  loadingMembersText: {
+    marginTop: 10,
+    fontSize: 14,
+  },
+  emptyText: {
+    textAlign: "center",
+    marginTop: 20,
+    fontSize: 16,
+    fontStyle: "italic",
+    opacity: 0.7,
   },
 });
