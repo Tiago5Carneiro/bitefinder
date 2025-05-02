@@ -1,334 +1,373 @@
 import { useState, useEffect } from "react";
 import {
   StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  FlatList,
-  Alert,
-  StatusBar,
   View,
-  TextInput,
-  Clipboard,
+  TouchableOpacity,
+  Alert,
+  Share,
+  FlatList,
+  ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 
-// Mock user data
-const MOCK_USERS = [
-  {
-    id: "user1",
-    name: "You",
-    avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200",
-    status: "host", // host, ready, pending
-  },
-  {
-    id: "user2",
-    name: "Alex Johnson",
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
-    status: "ready",
-  },
-  {
-    id: "user3",
-    name: "Sam Rodriguez",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
-    status: "ready",
-  },
-];
+const API_URL = "http://localhost:5000";
+
+interface Member {
+  username: string;
+  name: string;
+  is_ready?: boolean;
+  is_host?: boolean;
+}
 
 export default function GroupLobbyScreen() {
+  const { groupCode, groupName } = useLocalSearchParams();
+  const [members, setMembers] = useState<Member[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isHost, setIsHost] = useState(false);
+  const [allReady, setAllReady] = useState(false);
+
   const tintColor = useThemeColor({}, "tint");
-  const textColor = useThemeColor({}, "text");
   const backgroundColor = useThemeColor({}, "background");
+  const textColor = useThemeColor({}, "text");
   const cardColor = useThemeColor({}, "card");
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [groupName, setGroupName] = useState("Dinner Squad");
-  const [groupCode, setGroupCode] = useState("DIN-392-XYZ");
-  const [members, setMembers] = useState(MOCK_USERS);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
-  
-  // Simulate sending invite
-  const sendInvite = () => {
-    if (!searchQuery.trim()) {
-      Alert.alert("Error", "Please enter a username or email");
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const userData = await AsyncStorage.getItem("userData");
+        if (userData) {
+          const user = JSON.parse(userData);
+          setCurrentUser(user);
+
+          // Check if current user is the host (creator of the group)
+          const response = await fetch(`${API_URL}/groups/${groupCode}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${await AsyncStorage.getItem(
+                "userToken"
+              )}`,
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setIsHost(data.group.creator_username === user.username);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading user data:", error);
+      }
+    };
+
+    loadUserData();
+    fetchGroupMembers();
+
+    // Poll for updates every 5 seconds
+    const interval = setInterval(() => {
+      fetchGroupMembers();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [groupCode]);
+
+  const fetchGroupMembers = async () => {
+    try {
+      setIsLoading(true);
+      const userToken = await AsyncStorage.getItem("userToken");
+
+      if (!userToken) {
+        Alert.alert("Not logged in", "Please login first");
+        router.push({ pathname: "/(auth)/login" });
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/groups/${groupCode}/members`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMembers(data.members || []);
+
+        // Check if all members are ready
+        const allMembersReady = data.members.every(
+          (member: Member) => member.is_ready
+        );
+        setAllReady(allMembersReady && data.members.length > 0);
+      } else {
+        const errorData = await response.json();
+        Alert.alert(
+          "Error",
+          errorData.error || "Failed to fetch group members"
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching group members:", error);
+      Alert.alert("Error", "Failed to fetch group members. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const shareGroupCode = async () => {
+    try {
+      await Share.share({
+        message: `Join my restaurant picking group in BiteFinder! Group code: ${groupCode}`,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Could not share group code");
+    }
+  };
+
+  const startRestaurantPicking = async () => {
+    // Check if all members are ready
+    if (!allReady) {
+      Alert.alert(
+        "Not everyone is ready",
+        "Please wait until all members have marked themselves as ready."
+      );
       return;
     }
-    
-    setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      const newMember = {
-        id: `user${members.length + 1}`,
-        name: searchQuery,
-        avatar: "https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=200",
-        status: "pending",
-      };
-      
-      setMembers([...members, newMember]);
-      setSearchQuery("");
-      setIsLoading(false);
-      
-      Alert.alert("Success", `Invitation sent to ${searchQuery}`);
-    }, 1500);
-  };
-  
-  // Remove a member
-  const removeMember = (userId: string) => {
-    Alert.alert(
-      "Remove Member",
-      "Are you sure you want to remove this member?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive",
-          onPress: () => {
-            setMembers(members.filter(member => member.id !== userId));
-          }
-        }
-      ]
-    );
-  };
-  
-  // Copy group code to clipboard
-  const copyGroupCode = () => {
-    Clipboard.setString(groupCode);
-    Alert.alert("Success", "Group code copied to clipboard");
-  };
 
-  // Start the group selection process
-  const startGroupSelection = () => {
-    // Check if all members are ready
-    const pendingMembers = members.filter(member => member.status === "pending");
-    
-    // Create a group object to pass to the selection screen
-    const groupData = {
-      id: groupCode,
-      name: groupName,
-      members: members.map(m => m.id),
-    };
-    
-    if (pendingMembers.length > 0) {
-      console.log("1", groupData);
-      Alert.alert(
-        "Pending Members",
-        "Some members haven't joined yet. Do you want to start anyway?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { 
-            text: "Start Anyway", 
-            onPress: () => {
-              console.log("Navigating to group-selection with pending members:", groupData);
-              router.push({
-                pathname: "/restaurant/group-selection",
-                params: { group: JSON.stringify(groupData) }
-              });
-            }
-          }
-        ]
-      );
-    } else {
-      console.log("Directly navigating to group-selection:", groupData);
-      router.push({
-        pathname: "/restaurant/group-selection",
-        params: { group: JSON.stringify(groupData) }
+    try {
+      // Update group status to "selecting" in the API
+      const userToken = await AsyncStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/groups/${groupCode}/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
       });
+
+      if (response.ok) {
+        // Navigate to restaurant selection screen
+        router.push({
+          pathname: "/restaurant/group-selection",
+          params: { groupCode },
+        });
+      } else {
+        const errorData = await response.json();
+        Alert.alert("Error", errorData.error || "Failed to start selection");
+      }
+    } catch (error) {
+      console.error("Error starting selection:", error);
+      Alert.alert(
+        "Error",
+        "Failed to start restaurant selection. Please try again."
+      );
     }
   };
 
-  // Cancel the group session
-  const cancelGroup = () => {
+  const leaveGroup = () => {
     Alert.alert(
-      "Cancel Group",
-      "Are you sure you want to cancel this dinner group?",
+      isHost ? "Dissolve Group" : "Leave Group",
+      isHost
+        ? "As the host, leaving will dissolve the group for all members. Are you sure?"
+        : "Are you sure you want to leave this group?",
       [
-        { text: "No", style: "cancel" },
-        { 
-          text: "Yes", 
+        { text: "Cancel", style: "cancel" },
+        {
+          text: isHost ? "Dissolve Group" : "Leave",
           style: "destructive",
-          onPress: () => router.back()
-        }
+          onPress: async () => {
+            try {
+              const userToken = await AsyncStorage.getItem("userToken");
+
+              if (!userToken) {
+                router.replace({ pathname: "/(tabs)" });
+                return;
+              }
+
+              // Call API to leave/dissolve group
+              const response = await fetch(
+                `${API_URL}/groups/${groupCode}/leave`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${userToken}`,
+                  },
+                  body: JSON.stringify({
+                    username: currentUser.username,
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                // Navigate back to home
+                router.replace({ pathname: "/(tabs)" });
+              } else {
+                const errorData = await response.json();
+                Alert.alert(
+                  "Error",
+                  errorData.error || "Failed to leave group"
+                );
+              }
+            } catch (error) {
+              console.error("Error leaving group:", error);
+              Alert.alert("Error", "Failed to leave group. Please try again.");
+              router.replace({ pathname: "/(tabs)" });
+            }
+          },
+        },
       ]
     );
   };
+
+  const renderMemberItem = ({ item }: { item: Member }) => (
+    <View style={[styles.memberItem, { borderBottomColor: cardColor + "30" }]}>
+      <View
+        style={[
+          styles.memberAvatar,
+          {
+            backgroundColor: item.is_host
+              ? "#4ECDC4"
+              : item.is_ready
+              ? "#4CAF50"
+              : "#FFC107",
+          },
+        ]}
+      >
+        <ThemedText style={styles.memberInitial}>
+          {item.name.charAt(0).toUpperCase()}
+        </ThemedText>
+      </View>
+      <View style={styles.memberInfoContainer}>
+        <ThemedText style={styles.memberName}>
+          {item.name}
+          {currentUser && item.username === currentUser.username && " (You)"}
+          {item.is_host && " • Host"}
+        </ThemedText>
+
+        <ThemedView
+          style={[
+            styles.statusBadge,
+            {
+              backgroundColor: item.is_ready ? "#4CAF50" : "#FFC107",
+            },
+          ]}
+        >
+          <ThemedText style={styles.statusText}>
+            {item.is_ready ? "Ready" : "Waiting"}
+          </ThemedText>
+        </ThemedView>
+      </View>
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      
-      {/* Header */}
-      <ThemedView style={styles.header}>
+      <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
           style={styles.backButton}
+          onPress={() => router.back()}
         >
-          <Ionicons name="chevron-back" size={24} color={textColor} />
+          <Ionicons name="arrow-back" size={24} color={textColor} />
         </TouchableOpacity>
+        <ThemedText type="title" style={styles.headerTitle}>
+          Group Lobby
+        </ThemedText>
 
-        <ThemedView style={styles.headerContent}>
-          <ThemedText type="subtitle" style={styles.headerTitle}>
-            Dinner Group
+        <TouchableOpacity onPress={leaveGroup} style={styles.leaveButton}>
+          <Ionicons name="exit-outline" size={24} color="#FF6B6B" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.codeContainer}>
+        <ThemedText style={styles.codeLabel}>Group Code:</ThemedText>
+        <ThemedText style={styles.codeText}>{groupCode}</ThemedText>
+        <TouchableOpacity
+          style={[styles.shareButton, { backgroundColor: tintColor }]}
+          onPress={shareGroupCode}
+        >
+          <Ionicons name="share-outline" size={20} color="white" />
+          <ThemedText style={styles.shareButtonText}>Share Code</ThemedText>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.infoContainer}>
+        <ThemedText style={styles.infoText}>
+          {isHost
+            ? "You're the host! Share this code with friends to let them join your group."
+            : "Share this code with friends to let them join your group!"}
+        </ThemedText>
+
+        {isHost && (
+          <ThemedText style={[styles.infoText, styles.hostNote]}>
+            As the host, you can start the restaurant selection once everyone is
+            ready.
           </ThemedText>
-        </ThemedView>
+        )}
+      </View>
 
-        <TouchableOpacity onPress={cancelGroup} style={styles.cancelButton}>
-          <Ionicons name="close-circle-outline" size={24} color="#FF6B6B" />
-        </TouchableOpacity>
-      </ThemedView>
-      
-      {/* Group Info Card */}
-      <ThemedView style={[styles.card, { backgroundColor: cardColor }]}>
-        <ThemedView style={styles.groupNameContainer}>
-          {isEditing ? (
-            <TextInput
-              style={[styles.groupNameInput, { color: textColor }]}
-              value={groupName}
-              onChangeText={setGroupName}
-              autoFocus
-              onBlur={() => setIsEditing(false)}
-              onSubmitEditing={() => setIsEditing(false)}
-            />
-          ) : (
-            <TouchableOpacity 
-              style={styles.groupNameRow}
-              onPress={() => setIsEditing(true)}
-            >
-              <ThemedText type="title" style={styles.groupName}>
-                {groupName}
-              </ThemedText>
-              <Ionicons name="pencil" size={16} color={textColor} style={styles.editIcon} />
-            </TouchableOpacity>
-          )}
-        </ThemedView>
-        
-        <ThemedView style={styles.codeContainer}>
-          <ThemedView style={styles.codeBox}>
-            <ThemedText style={styles.codeText}>{groupCode}</ThemedText>
-          </ThemedView>
-          <TouchableOpacity style={styles.copyButton} onPress={copyGroupCode}>
-            <Ionicons name="copy-outline" size={20} color="#fff" />
-          </TouchableOpacity>
-        </ThemedView>
-        
-        <ThemedText style={styles.codeHint}>
-          Share this code with friends to join your dinner group
-        </ThemedText>
-      </ThemedView>
-      
-      {/* Member Invite */}
-      <ThemedView style={styles.inviteSection}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          Invite Friends
-        </ThemedText>
-        
-        <ThemedView style={styles.searchContainer}>
-          <Ionicons 
-            name="search" 
-            size={20} 
-            color={textColor} 
-            style={styles.searchIcon} 
-          />
-          <TextInput
-            style={[styles.searchInput, { color: textColor }]}
-            placeholder="Username or email"
-            placeholderTextColor="#888"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            returnKeyType="send"
-            onSubmitEditing={sendInvite}
-          />
-          <TouchableOpacity 
-            style={[styles.sendButton, { backgroundColor: tintColor }]}
-            onPress={sendInvite}
-            disabled={isLoading || !searchQuery.trim()}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="send" size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </ThemedView>
-      </ThemedView>
-      
-      {/* Members List */}
-      <ThemedView style={styles.membersSection}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
+      <View style={styles.membersContainer}>
+        <ThemedText style={styles.membersTitle}>
           Members ({members.length})
         </ThemedText>
-        
-        <FlatList
-          data={members}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ThemedView style={[styles.memberCard, { backgroundColor: cardColor }]}>
-              <Image
-                source={{ uri: item.avatar }}
-                style={styles.avatar}
-                contentFit="cover"
-                transition={200}
-              />
-              
-              <ThemedView style={styles.memberInfo}>
-                <ThemedText style={styles.memberName}>
-                  {item.name}
-                </ThemedText>
-                
-                <ThemedView style={[
-                  styles.statusBadge,
-                  { 
-                    backgroundColor: 
-                      item.status === "host" ? "#4ECDC4" : 
-                      item.status === "ready" ? "#4CAF50" : "#FFC107"
-                  }
-                ]}>
-                  <ThemedText style={styles.statusText}>
-                    {item.status === "host" ? "Host" : 
-                     item.status === "ready" ? "Ready" : "Pending"}
-                  </ThemedText>
-                </ThemedView>
-              </ThemedView>
-              
-              {item.id !== "user1" && (
-                <TouchableOpacity 
-                  style={styles.removeButton}
-                  onPress={() => removeMember(item.id)}
-                >
-                  <Ionicons name="person-remove" size={20} color="#FF6B6B" />
-                </TouchableOpacity>
-              )}
-            </ThemedView>
-          )}
-          contentContainerStyle={styles.membersList}
-        />
-      </ThemedView>
-      
-      {/* Action Buttons */}
-      <ThemedView style={styles.actionButtons}>
-        <TouchableOpacity 
-          style={[styles.startButton, { backgroundColor: tintColor }]}
-          onPress={startGroupSelection}
+
+        {isLoading ? (
+          <View style={styles.loadingMembersContainer}>
+            <ActivityIndicator color={tintColor} />
+            <ThemedText style={styles.loadingText}>
+              Loading members...
+            </ThemedText>
+          </View>
+        ) : (
+          <FlatList
+            data={members}
+            renderItem={renderMemberItem}
+            keyExtractor={(item) => item.username}
+            style={styles.membersList}
+            ListEmptyComponent={
+              <ThemedText style={styles.emptyText}>No members yet</ThemedText>
+            }
+          />
+        )}
+
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={fetchGroupMembers}
         >
-          <Ionicons name="restaurant" size={20} color="#fff" style={styles.buttonIcon} />
-          <ThemedText style={styles.buttonText}>Start Restaurant Selection</ThemedText>
+          <Ionicons name="refresh" size={20} color={textColor} />
+          <ThemedText style={styles.refreshText}>Refresh Members</ThemedText>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.cancelGroupButton}
-          onPress={cancelGroup}
+      </View>
+
+      {isHost && (
+        <TouchableOpacity
+          style={[
+            styles.startButton,
+            {
+              backgroundColor: allReady ? tintColor : cardColor,
+              opacity: allReady ? 1 : 0.5,
+            },
+          ]}
+          onPress={startRestaurantPicking}
+          disabled={!allReady}
         >
-          <ThemedText style={[styles.cancelButtonText, { color: "#FF6B6B" }]}>
-            Cancel Group
+          <ThemedText
+            style={[
+              styles.startButtonText,
+              { color: allReady ? "white" : textColor },
+            ]}
+          >
+            {allReady
+              ? "Start Picking Restaurants"
+              : "Waiting for all members to be ready..."}
           </ThemedText>
         </TouchableOpacity>
-      </ThemedView>
+      )}
     </ThemedView>
   );
 }
@@ -336,196 +375,155 @@ export default function GroupLobbyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 20,
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 15,
-  },
-  headerContent: {
-    flex: 1,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    marginTop: 40,
+    marginBottom: 30,
   },
   backButton: {
-    padding: 8,
-    borderRadius: 20,
+    padding: 10,
   },
-  cancelButton: {
-    padding: 8,
-    borderRadius: 20,
-  },
-  card: {
-    margin: 16,
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  groupNameContainer: {
-    marginBottom: 16,
-  },
-  groupNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  groupName: {
+  headerTitle: {
     fontSize: 24,
-    fontWeight: "bold",
+    fontWeight: "700",
+    flex: 1,
+    textAlign: "center",
+    marginRight: 0, // Changed to center correctly
   },
-  groupNameInput: {
-    fontSize: 24,
-    fontWeight: "bold",
-    borderBottomWidth: 1,
-    borderBottomColor: "#4ECDC4",
-    padding: 4,
-  },
-  editIcon: {
-    marginLeft: 8,
-    opacity: 0.6,
+  leaveButton: {
+    padding: 10,
   },
   codeContainer: {
-    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginVertical: 20,
   },
-  codeBox: {
-    backgroundColor: "rgba(78, 205, 196, 0.1)",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flex: 1,
-    marginRight: 10,
+  codeLabel: {
+    fontSize: 16,
+    marginBottom: 10,
   },
   codeText: {
-    fontSize: 16,
-    fontWeight: "500",
-    textAlign: "center",
-    letterSpacing: 1,
+    fontSize: 36,
+    fontWeight: "bold",
+    letterSpacing: 5,
+    marginBottom: 20,
   },
-  copyButton: {
-    backgroundColor: "#4ECDC4",
+  shareButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  shareButtonText: {
+    color: "white",
+    marginLeft: 5,
+    fontWeight: "600",
+  },
+  infoContainer: {
+    marginTop: 10,
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  infoText: {
+    textAlign: "center",
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  hostNote: {
+    marginTop: 10,
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  membersContainer: {
+    marginTop: 20,
+    flex: 1,
+  },
+  membersTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 15,
+  },
+  membersList: {
+    flex: 1,
+  },
+  memberItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  memberAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
   },
-  codeHint: {
-    fontSize: 12,
-    opacity: 0.7,
-    textAlign: "center",
-  },
-  inviteSection: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
+  memberInitial: {
+    color: "white",
     fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 12,
+    fontWeight: "bold",
   },
-  searchContainer: {
+  memberInfoContainer: {
+    flex: 1,
+    marginLeft: 15,
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(150, 150, 150, 0.3)",
-    paddingHorizontal: 16,
-    height: 50,
-  },
-  searchIcon: {
-    marginRight: 10,
-    opacity: 0.7,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    height: "100%",
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  membersSection: {
-    paddingHorizontal: 16,
-    flex: 1,
-  },
-  membersList: {
-    paddingBottom: 20,
-  },
-  memberCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  memberInfo: {
-    flex: 1,
-    marginLeft: 12,
   },
   memberName: {
     fontSize: 16,
     fontWeight: "500",
-    marginBottom: 4,
   },
   statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
-    alignSelf: "flex-start",
   },
   statusText: {
     color: "#fff",
     fontSize: 12,
     fontWeight: "bold",
   },
-  removeButton: {
-    padding: 8,
+  loadingText: {
+    textAlign: "center",
+    marginTop: 10,
+    fontSize: 16,
   },
-  actionButtons: {
-    padding: 16,
+  loadingMembersContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
+  emptyText: {
+    textAlign: "center",
+    marginTop: 20,
+    fontSize: 16,
+    fontStyle: "italic",
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 15,
+    padding: 10,
+  },
+  refreshText: {
+    marginLeft: 5,
+    fontSize: 14,
   },
   startButton: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     padding: 16,
     borderRadius: 12,
-    marginBottom: 12,
+    marginTop: 20,
+    marginBottom: 30,
   },
-  buttonIcon: {
-    marginRight: 8,
-  },
-  buttonText: {
-    color: "#fff",
+  startButtonText: {
     fontSize: 16,
     fontWeight: "600",
-  },
-  cancelGroupButton: {
-    alignItems: "center",
-    padding: 12,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
   },
 });
