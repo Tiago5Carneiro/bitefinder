@@ -17,6 +17,20 @@ import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 
+// Define the type for user food preferences
+type UserWithPreferences = {
+  username?: string;
+  name?: string;
+  email?: string;
+  avatar?: string;
+  phone?: string;
+  dietaryPreferences?: string;
+  ambiancePreference?: string;
+  pricePreference?: string;
+  crowdPreference?: string;
+  cuisinePreference?: string;
+};
+
 // Mock data for recent restaurants
 const RECENT_RESTAURANTS = [
   {
@@ -161,6 +175,12 @@ const EXTENDED_USER_DATA = {
   dietaryPreferences: "Vegetarian, No peanuts",
 };
 
+// Food preference options - same as in registration
+const AMBIANCE_OPTIONS = ["Rustic", "Modern"];
+const PRICE_OPTIONS = ["Budget-friendly", "Upscale"];
+const CROWD_OPTIONS = ["Quiet", "Lively"];
+const CUISINE_OPTIONS = ["Traditional", "Gourmet", "Cousy"];
+
 export default function ProfileScreen() {
   // State for showing all items
   const [showAllRestaurants, setShowAllRestaurants] = useState(false);
@@ -175,9 +195,10 @@ export default function ProfileScreen() {
   const cardColor = useThemeColor({}, "card");
   const textColor = useThemeColor({}, "text");
   const modalBackgroundColor = useThemeColor({}, "background");
+  const borderColor = useThemeColor({}, "border");
 
   // Enhance user with mock data if properties are missing
-  const enhancedUser = user
+  const enhancedUser: UserWithPreferences = user
     ? {
         ...user,
         name: EXTENDED_USER_DATA.name,
@@ -185,8 +206,18 @@ export default function ProfileScreen() {
         avatar: EXTENDED_USER_DATA.avatar,
         phone: EXTENDED_USER_DATA.phone,
         dietaryPreferences: EXTENDED_USER_DATA.dietaryPreferences,
+        ambiancePreference: user.ambiancePreference || "",
+        pricePreference: user.pricePreference || "",
+        crowdPreference: user.crowdPreference || "",
+        cuisinePreference: user.cuisinePreference || "",
       }
-    : EXTENDED_USER_DATA;
+    : {
+        ...EXTENDED_USER_DATA,
+        ambiancePreference: "",
+        pricePreference: "",
+        crowdPreference: "",
+        cuisinePreference: "",
+      };
 
   // State management
   const [isEditing, setIsEditing] = useState(false);
@@ -195,6 +226,18 @@ export default function ProfileScreen() {
   const [phone, setPhone] = useState(enhancedUser?.phone || "");
   const [dietaryPreferences, setDietaryPreferences] = useState(
     enhancedUser?.dietaryPreferences || ""
+  );
+  const [ambiancePreference, setAmbiancePreference] = useState(
+    enhancedUser?.ambiancePreference || ""
+  );
+  const [pricePreference, setPricePreference] = useState(
+    enhancedUser?.pricePreference || ""
+  );
+  const [crowdPreference, setCrowdPreference] = useState(
+    enhancedUser?.crowdPreference || ""
+  );
+  const [cuisinePreference, setCuisinePreference] = useState(
+    enhancedUser?.cuisinePreference || ""
   );
   const [activeTab, setActiveTab] = useState("restaurants"); // restaurants or friends
 
@@ -205,6 +248,10 @@ export default function ProfileScreen() {
       setEmail(enhancedUser.email || "");
       setPhone(enhancedUser.phone || "");
       setDietaryPreferences(enhancedUser.dietaryPreferences || "");
+      setAmbiancePreference(enhancedUser.ambiancePreference || "");
+      setPricePreference(enhancedUser.pricePreference || "");
+      setCrowdPreference(enhancedUser.crowdPreference || "");
+      setCuisinePreference(enhancedUser.cuisinePreference || "");
     }
   }, [enhancedUser]);
 
@@ -212,7 +259,16 @@ export default function ProfileScreen() {
   const handleSave = async () => {
     try {
       // Here you would update the user profile in your backend
-      // await updateUserProfile({ name, email, phone, dietaryPreferences });
+      // await updateUserProfile({ 
+      //   name, 
+      //   email, 
+      //   phone, 
+      //   dietaryPreferences,
+      //   ambiancePreference,
+      //   pricePreference,
+      //   crowdPreference,
+      //   cuisinePreference
+      // });
       setIsEditing(false);
       Alert.alert("Success", "Profile updated successfully");
     } catch (error) {
@@ -226,8 +282,46 @@ export default function ProfileScreen() {
     setEmail(enhancedUser?.email || "");
     setPhone(enhancedUser?.phone || "");
     setDietaryPreferences(enhancedUser?.dietaryPreferences || "");
+    setAmbiancePreference(enhancedUser?.ambiancePreference || "");
+    setPricePreference(enhancedUser?.pricePreference || "");
+    setCrowdPreference(enhancedUser?.crowdPreference || "");
+    setCuisinePreference(enhancedUser?.cuisinePreference || "");
     setIsEditing(false);
   };
+
+  // Option selection component - same as in registration
+  const renderOptions = (
+    options: string[],
+    selectedValue: string,
+    setSelectedValue: (value: string) => void,
+    title: string
+  ) => (
+    <View style={styles.preferencesSection}>
+      <ThemedText style={styles.preferenceTitle}>{title}</ThemedText>
+      <View style={styles.optionsContainer}>
+        {options.map((option) => (
+          <TouchableOpacity
+            key={option}
+            style={[
+              styles.optionButton,
+              { borderColor: borderColor },
+              selectedValue === option && { backgroundColor: tintColor, borderColor: tintColor }
+            ]}
+            onPress={() => setSelectedValue(option)}
+          >
+            <ThemedText 
+              style={[
+                styles.optionText,
+                selectedValue === option && styles.selectedOptionText
+              ]}
+            >
+              {option}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -332,6 +426,58 @@ export default function ProfileScreen() {
             <ThemedText style={styles.infoLabel}>Preferences</ThemedText>
             <ThemedText style={styles.infoValue}>
               {enhancedUser.dietaryPreferences || "None"}
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons
+              name="restaurant-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
+            <ThemedText style={styles.infoLabel}>Ambiance</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.ambiancePreference || "Not set"}
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons
+              name="cash-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
+            <ThemedText style={styles.infoLabel}>Price</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.pricePreference || "Not set"}
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons
+              name="people-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
+            <ThemedText style={styles.infoLabel}>Atmosphere</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.crowdPreference || "Not set"}
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons
+              name="fast-food-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
+            <ThemedText style={styles.infoLabel}>Cuisine</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.cuisinePreference || "Not set"}
             </ThemedText>
           </View>
         </ThemedView>
@@ -651,6 +797,50 @@ export default function ProfileScreen() {
                   placeholder="E.g., Vegetarian, Gluten-free, etc."
                   placeholderTextColor="#888"
                 />
+              </View>
+
+              {/* Add this after the dietary preferences TextInput */}
+              <View style={[styles.formField, { marginBottom: 0 }]}>
+                <View style={styles.labelRow}>
+                  <Ionicons
+                    name="restaurant-outline"
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                  />
+                  <ThemedText type="subtitle">Food Preferences</ThemedText>
+                </View>
+              </View>
+
+              {/* Food Preferences selection */}
+              <View style={[styles.preferencesContainer, { paddingHorizontal: 20 }]}>
+                {renderOptions(
+                  AMBIANCE_OPTIONS, 
+                  ambiancePreference, 
+                  setAmbiancePreference,
+                  "Ambiance"
+                )}
+                
+                {renderOptions(
+                  PRICE_OPTIONS, 
+                  pricePreference, 
+                  setPricePreference,
+                  "Price Range"
+                )}
+                
+                {renderOptions(
+                  CROWD_OPTIONS, 
+                  crowdPreference, 
+                  setCrowdPreference,
+                  "Atmosphere"
+                )}
+                
+                {renderOptions(
+                  CUISINE_OPTIONS, 
+                  cuisinePreference, 
+                  setCuisinePreference,
+                  "Cuisine Type"
+                )}
               </View>
 
               {/* Save Button */}
@@ -989,6 +1179,42 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: "bold",
+    color: "white",
+  },
+  preferencesContainer: {
+    marginTop: 5,
+    marginBottom: 20,
+  },
+  preferencesTitle: {
+    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  preferencesSection: {
+    marginBottom: 15,
+  },
+  preferenceTitle: {
+    marginBottom: 8,
+    fontWeight: "500",
+    fontSize: 14,
+  },
+  optionsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 5,
+  },
+  optionButton: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  optionText: {
+    fontSize: 14,
+  },
+  selectedOptionText: {
     color: "white",
   },
 });
