@@ -1,9 +1,3 @@
-<<<<<<< Updated upstream
-import { StyleSheet, TouchableOpacity, TextInput, Alert, Modal, View, ScrollView, Image } from "react-native";
-import { useState, useEffect } from "react";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-=======
 import {
   StyleSheet,
   TouchableOpacity,
@@ -11,9 +5,12 @@ import {
   Alert,
   Modal,
   View,
+  ScrollView,
+  Image,
 } from "react-native";
-import { useState } from "react";
->>>>>>> Stashed changes
+import { useState, useEffect } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -27,36 +24,36 @@ const RECENT_RESTAURANTS = [
     name: "Sushi Paradise",
     image: "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200",
     date: "Apr 28, 2025",
-    rating: 4.5
+    rating: 4.5,
   },
   {
     id: "2",
     name: "Burger Joint",
     image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200",
     date: "Apr 22, 2025",
-    rating: 4.2
+    rating: 4.2,
   },
   {
     id: "3",
     name: "Pasta Palace",
     image: "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=200",
     date: "Apr 15, 2025",
-    rating: 4.7
+    rating: 4.7,
   },
   {
     id: "4",
     name: "Taco Fiesta",
     image: "https://images.unsplash.com/photo-1552332386-f8dd00dc2f85?w=200",
     date: "Apr 8, 2025",
-    rating: 4.1
+    rating: 4.1,
   },
   {
     id: "5",
     name: "Golden Dragon",
     image: "https://images.unsplash.com/photo-1563245372-f21724e3856d?w=200",
     date: "Apr 3, 2025",
-    rating: 4.3
-  }
+    rating: 4.3,
+  },
 ];
 
 // Additional restaurants for expanded view
@@ -66,36 +63,36 @@ const ADDITIONAL_RESTAURANTS = [
     name: "Mountain View Cafe",
     image: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=200",
     date: "Mar 25, 2025",
-    rating: 4.4
+    rating: 4.4,
   },
   {
     id: "7",
     name: "Coastal Seafood",
     image: "https://images.unsplash.com/photo-1615141982883-c7ad0e69fd62?w=200",
     date: "Mar 18, 2025",
-    rating: 4.6
+    rating: 4.6,
   },
   {
     id: "8",
     name: "Thai Spice",
     image: "https://images.unsplash.com/photo-1562565652-a0d8b4be2115?w=200",
     date: "Mar 10, 2025",
-    rating: 4.3
+    rating: 4.3,
   },
   {
     id: "9",
     name: "Mediterranean Delight",
     image: "https://images.unsplash.com/photo-1594179047519-f347310d3322?w=200",
     date: "Mar 3, 2025",
-    rating: 4.7
+    rating: 4.7,
   },
   {
     id: "10",
     name: "Rustic Kitchen",
     image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200",
     date: "Feb 24, 2025",
-    rating: 4.2
-  }
+    rating: 4.2,
+  },
 ];
 
 // Mock data for friend rankings
@@ -105,22 +102,22 @@ const FRIEND_RANKINGS = [
     name: "Alex Johnson",
     image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
     count: 8,
-    lastDate: "Apr 28, 2025"
+    lastDate: "Apr 28, 2025",
   },
   {
     id: "2",
     name: "Sam Rodriguez",
     image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
     count: 5,
-    lastDate: "Apr 15, 2025"
+    lastDate: "Apr 15, 2025",
   },
   {
     id: "3",
     name: "Taylor Kim",
     image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200",
     count: 3,
-    lastDate: "Apr 3, 2025"
-  }
+    lastDate: "Apr 3, 2025",
+  },
 ];
 
 // Additional friends for expanded view
@@ -130,29 +127,29 @@ const ADDITIONAL_FRIENDS = [
     name: "Jordan Smith",
     image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
     count: 2,
-    lastDate: "Mar 18, 2025"
+    lastDate: "Mar 18, 2025",
   },
   {
     id: "5",
     name: "Casey Morgan",
     image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
     count: 2,
-    lastDate: "Mar 10, 2025"
+    lastDate: "Mar 10, 2025",
   },
   {
     id: "6",
     name: "Riley Wilson",
     image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200",
     count: 1,
-    lastDate: "Feb 24, 2025"
+    lastDate: "Feb 24, 2025",
   },
   {
     id: "7",
     name: "Jamie Taylor",
     image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200",
     count: 1,
-    lastDate: "Jan 15, 2025"
-  }
+    lastDate: "Jan 15, 2025",
+  },
 ];
 
 // Mock extended user data
@@ -161,14 +158,14 @@ const EXTENDED_USER_DATA = {
   email: "demo@example.com",
   avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200",
   phone: "+1 (555) 123-4567",
-  dietaryPreferences: "Vegetarian, No peanuts"
+  dietaryPreferences: "Vegetarian, No peanuts",
 };
 
 export default function ProfileScreen() {
   // State for showing all items
   const [showAllRestaurants, setShowAllRestaurants] = useState(false);
   const [showAllFriends, setShowAllFriends] = useState(false);
-  
+
   // Authentication and user context
   const { user, signOut } = useAuth();
 
@@ -178,23 +175,27 @@ export default function ProfileScreen() {
   const cardColor = useThemeColor({}, "card");
   const textColor = useThemeColor({}, "text");
   const modalBackgroundColor = useThemeColor({}, "background");
-  
+
   // Enhance user with mock data if properties are missing
-  const enhancedUser = user ? {
-    ...user,
-    name: EXTENDED_USER_DATA.name,
-    email: EXTENDED_USER_DATA.email,
-    avatar: EXTENDED_USER_DATA.avatar,
-    phone: EXTENDED_USER_DATA.phone,
-    dietaryPreferences: EXTENDED_USER_DATA.dietaryPreferences
-  } : EXTENDED_USER_DATA;
+  const enhancedUser = user
+    ? {
+        ...user,
+        name: EXTENDED_USER_DATA.name,
+        email: EXTENDED_USER_DATA.email,
+        avatar: EXTENDED_USER_DATA.avatar,
+        phone: EXTENDED_USER_DATA.phone,
+        dietaryPreferences: EXTENDED_USER_DATA.dietaryPreferences,
+      }
+    : EXTENDED_USER_DATA;
 
   // State management
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(enhancedUser?.name || "");
   const [email, setEmail] = useState(enhancedUser?.email || "");
   const [phone, setPhone] = useState(enhancedUser?.phone || "");
-  const [dietaryPreferences, setDietaryPreferences] = useState(enhancedUser?.dietaryPreferences || "");
+  const [dietaryPreferences, setDietaryPreferences] = useState(
+    enhancedUser?.dietaryPreferences || ""
+  );
   const [activeTab, setActiveTab] = useState("restaurants"); // restaurants or friends
 
   // Update form fields when user changes
@@ -241,7 +242,7 @@ export default function ProfileScreen() {
           <View style={styles.profileImageContainer}>
             <Image
               source={{
-                uri: enhancedUser.avatar
+                uri: enhancedUser.avatar,
               }}
               style={styles.profileImage}
             />
@@ -249,7 +250,7 @@ export default function ProfileScreen() {
               <Ionicons name="camera" size={20} color="white" />
             </TouchableOpacity>
           </View>
-          
+
           <ThemedText style={styles.headerName}>
             {enhancedUser.name || "User Name"}
           </ThemedText>
@@ -283,70 +284,110 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.infoRow}>
-            <Ionicons name="person-outline" size={20} color={textColor} style={styles.infoIcon} />
+            <Ionicons
+              name="person-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
             <ThemedText style={styles.infoLabel}>Name</ThemedText>
-            <ThemedText style={styles.infoValue}>{enhancedUser.name || "N/A"}</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.name || "N/A"}
+            </ThemedText>
           </View>
 
           <View style={styles.infoRow}>
-            <Ionicons name="mail-outline" size={20} color={textColor} style={styles.infoIcon} />
+            <Ionicons
+              name="mail-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
             <ThemedText style={styles.infoLabel}>Email</ThemedText>
-            <ThemedText style={styles.infoValue}>{enhancedUser.email || "N/A"}</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.email || "N/A"}
+            </ThemedText>
           </View>
 
           <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={20} color={textColor} style={styles.infoIcon} />
+            <Ionicons
+              name="call-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
             <ThemedText style={styles.infoLabel}>Phone</ThemedText>
-            <ThemedText style={styles.infoValue}>{enhancedUser.phone || "N/A"}</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.phone || "N/A"}
+            </ThemedText>
           </View>
 
           <View style={styles.infoRow}>
-            <Ionicons name="restaurant-outline" size={20} color={textColor} style={styles.infoIcon} />
+            <Ionicons
+              name="restaurant-outline"
+              size={20}
+              color={textColor}
+              style={styles.infoIcon}
+            />
             <ThemedText style={styles.infoLabel}>Preferences</ThemedText>
-            <ThemedText style={styles.infoValue}>{enhancedUser.dietaryPreferences || "None"}</ThemedText>
+            <ThemedText style={styles.infoValue}>
+              {enhancedUser.dietaryPreferences || "None"}
+            </ThemedText>
           </View>
         </ThemedView>
 
         {/* History Tabs */}
         <View style={styles.tabContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.tab, 
-              activeTab === "restaurants" && [styles.activeTab, { borderColor: tintColor }]
+              styles.tab,
+              activeTab === "restaurants" && [
+                styles.activeTab,
+                { borderColor: tintColor },
+              ],
             ]}
             onPress={() => setActiveTab("restaurants")}
           >
-            <Ionicons 
-              name="restaurant" 
-              size={18} 
-              color={activeTab === "restaurants" ? tintColor : textColor} 
+            <Ionicons
+              name="restaurant"
+              size={18}
+              color={activeTab === "restaurants" ? tintColor : textColor}
             />
-            <ThemedText 
+            <ThemedText
               style={[
-                styles.tabText, 
-                activeTab === "restaurants" && { color: tintColor, fontWeight: '600' }
+                styles.tabText,
+                activeTab === "restaurants" && {
+                  color: tintColor,
+                  fontWeight: "600",
+                },
               ]}
             >
               Recent Restaurants
             </ThemedText>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[
-              styles.tab, 
-              activeTab === "friends" && [styles.activeTab, { borderColor: tintColor }]
+              styles.tab,
+              activeTab === "friends" && [
+                styles.activeTab,
+                { borderColor: tintColor },
+              ],
             ]}
             onPress={() => setActiveTab("friends")}
           >
-            <Ionicons 
-              name="people" 
-              size={18} 
-              color={activeTab === "friends" ? tintColor : textColor} 
+            <Ionicons
+              name="people"
+              size={18}
+              color={activeTab === "friends" ? tintColor : textColor}
             />
-            <ThemedText 
+            <ThemedText
               style={[
-                styles.tabText, 
-                activeTab === "friends" && { color: tintColor, fontWeight: '600' }
+                styles.tabText,
+                activeTab === "friends" && {
+                  color: tintColor,
+                  fontWeight: "600",
+                },
               ]}
             >
               Dining Buddies
@@ -360,36 +401,48 @@ export default function ProfileScreen() {
             <ThemedText type="subtitle" style={styles.cardTitle}>
               Your Recent Spots
             </ThemedText>
-            
+
             {/* Show either the initial list or the full list based on state */}
-            {(showAllRestaurants 
-              ? [...RECENT_RESTAURANTS, ...ADDITIONAL_RESTAURANTS] 
+            {(showAllRestaurants
+              ? [...RECENT_RESTAURANTS, ...ADDITIONAL_RESTAURANTS]
               : RECENT_RESTAURANTS
-            ).map(restaurant => (
-              <TouchableOpacity key={restaurant.id} style={styles.restaurantItem}>
-                <Image source={{ uri: restaurant.image }} style={styles.restaurantImage} />
+            ).map((restaurant) => (
+              <TouchableOpacity
+                key={restaurant.id}
+                style={styles.restaurantItem}
+              >
+                <Image
+                  source={{ uri: restaurant.image }}
+                  style={styles.restaurantImage}
+                />
                 <View style={styles.restaurantInfo}>
-                  <ThemedText style={styles.restaurantName}>{restaurant.name}</ThemedText>
-                  <ThemedText style={styles.restaurantDate}>{restaurant.date}</ThemedText>
+                  <ThemedText style={styles.restaurantName}>
+                    {restaurant.name}
+                  </ThemedText>
+                  <ThemedText style={styles.restaurantDate}>
+                    {restaurant.date}
+                  </ThemedText>
                 </View>
                 <View style={styles.ratingContainer}>
                   <Ionicons name="star" size={16} color="#FFD700" />
-                  <ThemedText style={styles.rating}>{restaurant.rating}</ThemedText>
+                  <ThemedText style={styles.rating}>
+                    {restaurant.rating}
+                  </ThemedText>
                 </View>
               </TouchableOpacity>
             ))}
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.viewAllButton}
               onPress={() => setShowAllRestaurants(!showAllRestaurants)}
             >
               <ThemedText style={[styles.viewAllText, { color: tintColor }]}>
                 {showAllRestaurants ? "Show Less" : "View All History"}
               </ThemedText>
-              <Ionicons 
-                name={showAllRestaurants ? "chevron-up" : "chevron-forward"} 
-                size={16} 
-                color={tintColor} 
+              <Ionicons
+                name={showAllRestaurants ? "chevron-up" : "chevron-forward"}
+                size={16}
+                color={tintColor}
               />
             </TouchableOpacity>
           </ThemedView>
@@ -401,18 +454,25 @@ export default function ProfileScreen() {
             <ThemedText type="subtitle" style={styles.cardTitle}>
               Your Dining Buddies
             </ThemedText>
-            
+
             {/* Show either the initial list or the full list based on state */}
-            {(showAllFriends 
-              ? [...FRIEND_RANKINGS, ...ADDITIONAL_FRIENDS] 
+            {(showAllFriends
+              ? [...FRIEND_RANKINGS, ...ADDITIONAL_FRIENDS]
               : FRIEND_RANKINGS
             ).map((friend, index) => (
               <TouchableOpacity key={friend.id} style={styles.friendItem}>
                 <ThemedText style={styles.friendRank}>#{index + 1}</ThemedText>
-                <Image source={{ uri: friend.image }} style={styles.friendImage} />
+                <Image
+                  source={{ uri: friend.image }}
+                  style={styles.friendImage}
+                />
                 <View style={styles.friendInfo}>
-                  <ThemedText style={styles.friendName}>{friend.name}</ThemedText>
-                  <ThemedText style={styles.friendDate}>Last: {friend.lastDate}</ThemedText>
+                  <ThemedText style={styles.friendName}>
+                    {friend.name}
+                  </ThemedText>
+                  <ThemedText style={styles.friendDate}>
+                    Last: {friend.lastDate}
+                  </ThemedText>
                 </View>
                 <View style={styles.countContainer}>
                   <ThemedText style={styles.count}>{friend.count}</ThemedText>
@@ -420,18 +480,18 @@ export default function ProfileScreen() {
                 </View>
               </TouchableOpacity>
             ))}
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.viewAllButton}
               onPress={() => setShowAllFriends(!showAllFriends)}
             >
               <ThemedText style={[styles.viewAllText, { color: tintColor }]}>
                 {showAllFriends ? "Show Less" : "See All Friends"}
               </ThemedText>
-              <Ionicons 
-                name={showAllFriends ? "chevron-up" : "chevron-forward"} 
-                size={16} 
-                color={tintColor} 
+              <Ionicons
+                name={showAllFriends ? "chevron-up" : "chevron-forward"}
+                size={16}
+                color={tintColor}
               />
             </TouchableOpacity>
           </ThemedView>
@@ -442,7 +502,12 @@ export default function ProfileScreen() {
           style={[styles.signOutButton, { borderColor: "#FF6B6B" }]}
           onPress={signOut}
         >
-          <Ionicons name="log-out-outline" size={20} color="#FF6B6B" style={{ marginRight: 8 }} />
+          <Ionicons
+            name="log-out-outline"
+            size={20}
+            color="#FF6B6B"
+            style={{ marginRight: 8 }}
+          />
           <ThemedText style={styles.signOutText}>Sign Out</ThemedText>
         </TouchableOpacity>
       </ScrollView>
@@ -457,10 +522,18 @@ export default function ProfileScreen() {
         {/* Modal Background Overlay */}
         <View style={styles.modalOverlay}>
           {/* Modal Content Container */}
-          <View style={[styles.modalContent, { backgroundColor: modalBackgroundColor }]}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: modalBackgroundColor },
+            ]}
+          >
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={handleCancel} style={styles.modalCloseButton}>
+              <TouchableOpacity
+                onPress={handleCancel}
+                style={styles.modalCloseButton}
+              >
                 <Ionicons name="close-outline" size={24} color={textColor} />
               </TouchableOpacity>
               <ThemedText type="title" style={styles.modalTitle}>
@@ -468,14 +541,14 @@ export default function ProfileScreen() {
               </ThemedText>
               <View style={{ width: 24 }} /> {/* Spacer for symmetry */}
             </View>
-            
+
             {/* Modal Fields */}
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Profile Image Edit */}
               <View style={styles.modalImageContainer}>
                 <Image
                   source={{
-                    uri: enhancedUser.avatar
+                    uri: enhancedUser.avatar,
                   }}
                   style={styles.modalProfileImage}
                 />
@@ -488,15 +561,23 @@ export default function ProfileScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
-              
+
               {/* Form Fields */}
               <View style={styles.formField}>
                 <View style={styles.labelRow}>
-                  <Ionicons name="person-outline" size={18} color={textColor} style={{ marginRight: 6 }} />
+                  <Ionicons
+                    name="person-outline"
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                  />
                   <ThemedText type="subtitle">Name</ThemedText>
                 </View>
                 <TextInput
-                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  style={[
+                    styles.input,
+                    { backgroundColor: cardColor, color: textColor },
+                  ]}
                   value={name}
                   onChangeText={setName}
                   placeholder="Enter your name"
@@ -506,11 +587,19 @@ export default function ProfileScreen() {
 
               <View style={styles.formField}>
                 <View style={styles.labelRow}>
-                  <Ionicons name="mail-outline" size={18} color={textColor} style={{ marginRight: 6 }} />
+                  <Ionicons
+                    name="mail-outline"
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                  />
                   <ThemedText type="subtitle">Email</ThemedText>
                 </View>
                 <TextInput
-                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  style={[
+                    styles.input,
+                    { backgroundColor: cardColor, color: textColor },
+                  ]}
                   value={email}
                   onChangeText={setEmail}
                   placeholder="Enter your email"
@@ -521,11 +610,19 @@ export default function ProfileScreen() {
 
               <View style={styles.formField}>
                 <View style={styles.labelRow}>
-                  <Ionicons name="call-outline" size={18} color={textColor} style={{ marginRight: 6 }} />
+                  <Ionicons
+                    name="call-outline"
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                  />
                   <ThemedText type="subtitle">Phone</ThemedText>
                 </View>
                 <TextInput
-                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  style={[
+                    styles.input,
+                    { backgroundColor: cardColor, color: textColor },
+                  ]}
                   value={phone}
                   onChangeText={setPhone}
                   placeholder="Enter your phone number"
@@ -536,11 +633,19 @@ export default function ProfileScreen() {
 
               <View style={styles.formField}>
                 <View style={styles.labelRow}>
-                  <Ionicons name="restaurant-outline" size={18} color={textColor} style={{ marginRight: 6 }} />
+                  <Ionicons
+                    name="restaurant-outline"
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                  />
                   <ThemedText type="subtitle">Dietary Preferences</ThemedText>
                 </View>
                 <TextInput
-                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  style={[
+                    styles.input,
+                    { backgroundColor: cardColor, color: textColor },
+                  ]}
                   value={dietaryPreferences}
                   onChangeText={setDietaryPreferences}
                   placeholder="E.g., Vegetarian, Gluten-free, etc."
@@ -549,18 +654,22 @@ export default function ProfileScreen() {
               </View>
 
               {/* Save Button */}
-              <TouchableOpacity
-                style={styles.saveButton}
-                onPress={handleSave}
-              >
+              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
                 <LinearGradient
                   colors={[tintColor, `${tintColor}CC`]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.saveButtonGradient}
                 >
-                  <Ionicons name="checkmark" size={20} color="white" style={{ marginRight: 8 }} />
-                  <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
+                  <Ionicons
+                    name="checkmark"
+                    size={20}
+                    color="white"
+                    style={{ marginRight: 8 }}
+                  />
+                  <ThemedText style={styles.saveButtonText}>
+                    Save Changes
+                  </ThemedText>
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>
