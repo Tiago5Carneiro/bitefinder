@@ -132,7 +132,9 @@ def create_embeddings_file(path):
             pass
 
         place = data[ind_p]
+        food_t = ""
         food_v = None
+        restaurant_t = ""
         restaurant_v = None
 
         for image_ind in range(min(len(place["photos"]),4)):
@@ -143,13 +145,13 @@ def create_embeddings_file(path):
             image_type, text = create_image_text(image_url,1)
 
             if image_type == 1 and food_v == None:
-                food_v = text_from_food_image(text)
-                food_v = creating_embeddings_from_text(food_v)
+                food_t = text
+                food_v = creating_embeddings_from_text(text)
             elif image_type == 0 and restaurant_v == None:
-                restaurant_v = text_from_restaurant_image(text)
-                restaurant_v = creating_embeddings_from_text(restaurant_v)
+                restaurant_t = text
+                restaurant_v = creating_embeddings_from_text(text)
 
-        ret_dic[ind_p] = {"foodVector": food_v, "restaurantVector": restaurant_v}
+        ret_dic[ind_p] = {"foodVector": food_v, "restaurantVector": restaurant_v, "foodText":food_t, "restaurantText":restaurant_t}
 
     f.close()
     f = open(path + "_vec","w")
