@@ -15,6 +15,7 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/ui/IconSymbol";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Data interfaces
 interface Friend {
@@ -160,6 +161,8 @@ const ConfirmationModal = ({
   );
 };
 
+const API_URL = "http://localhost:5000";
+
 export default function FriendsScreen() {
   // Authentication context
   const { user } = useAuth();
@@ -178,6 +181,7 @@ export default function FriendsScreen() {
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Animation for tab transitions
   const [fadeAnim] = useState(new Animated.Value(1));
@@ -235,31 +239,67 @@ export default function FriendsScreen() {
   };
 
   // New function to handle joining a group
-  const handleJoinGroup = () => {
+  const handleJoinGroup = async () => {
     if (!groupCode.trim()) {
       Alert.alert("Error", "Please enter a group code");
       return;
     }
 
-    // Simulate joining a group
-    setIsLoading(true);
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
 
-    // Simulate API call delay
-    setTimeout(() => {
-      setIsLoading(false);
+      // Get user token and data
+      const userToken = await AsyncStorage.getItem("userToken");
+      const userData = await AsyncStorage.getItem("userData");
 
-      // Navigate to participant lobby screen with the group code
-      router.push({
-        pathname: "/restaurant/participant-lobby",
-        params: {
-          code: groupCode,
-          name: "Dinner Group", // This would come from the API in a real implementation
+      if (!userToken || !userData) {
+        Alert.alert("Not logged in", "Please login first to join a group");
+        router.push({ pathname: "/(auth)/login" });
+        return;
+      }
+
+      const user = JSON.parse(userData);
+
+      // Call the API to join the group
+      const response = await fetch(`${API_URL}/groups/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
         },
+        body: JSON.stringify({
+          code: groupCode.toUpperCase().trim(),
+          username: user.username,
+        }),
       });
 
-      // Reset the group code input
-      setGroupCode("");
-    }, 1000);
+      const data = await response.json();
+
+      if (response.ok) {
+        // Navigate to the group lobby
+        router.push({
+          pathname: "/restaurant/group-lobby",
+          params: {
+            groupCode: groupCode.toUpperCase().trim(),
+            groupName: data.group.name,
+          },
+        });
+
+        // Reset the group code input
+        setGroupCode("");
+      } else {
+        // Show error message
+        setErrorMessage(data.error || "Failed to join group");
+        Alert.alert("Error", data.error || "Failed to join group");
+      }
+    } catch (error) {
+      console.error("Error joining group:", error);
+      setErrorMessage("Network error. Please try again.");
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Friend request sending function
