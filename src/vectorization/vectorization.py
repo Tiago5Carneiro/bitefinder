@@ -35,8 +35,6 @@ def creating_embeddings_from_text(input):
         model="Linq-AI-Research/Linq-Embed-Mistral"
     )
 
-    print(response.data[0].embedding)
-
     return response.data[0].embedding
 
 def starting_gemini_client():
@@ -61,9 +59,9 @@ def gemini_generate_text(prompt):
     response = None
     while response == None:
         try: 
-            response = gemini_client.models.generate_text(
+            response = gemini_client.models.generate_content(
                 model="gemini-2.0-flash",
-                prompt=prompt
+                contents=prompt
             )
         except:
             print(f"sleeping {prompt}")
@@ -199,6 +197,7 @@ def create_embeddings_file(path):
     f.close()
 
 def create_embeddings_from_preferences(preferences):
+    starting_gemini_client()
     starting_mistral_client()
     response = text_from_user_restaurant_preferences(preferences)
     restaurant_vector = creating_embeddings_from_text(response)
