@@ -57,6 +57,41 @@ def path_to_image(path):
     image = Image.open(path)
     return image
 
+def gemini_generate_text(prompt):
+    response = None
+    while response == None:
+        try: 
+            response = gemini_client.models.generate_text(
+                model="gemini-2.0-flash",
+                prompt=prompt
+            )
+        except:
+            print(f"sleeping {prompt}")
+            sleep(61)
+    return response
+
+def text_from_user_food_preferences(preferences):
+    prompt = f"""
+    You are a helpful assistant that can analyze food preferences.
+    Here is a list of food preferences: {preferences}
+    I want you to give me a brief description (between 50 to 100) of this food's style,
+    mood, colourfulness and vibe.
+    """
+    response = gemini_generate_text(prompt)
+
+    return response.text
+
+def text_from_user_restaurant_preferences(preferences):
+    prompt = f"""
+    You are a helpful assistant that can analyze restaurant preferences.
+    Here is a list of restaurant preferences: {preferences}
+    I want you to give me a brief description (between 50 to 100) of this restaurant's style,
+    colour theme, mood and vibe.
+    """
+    response = gemini_generate_text(prompt)
+
+    return response.text
+
 def gemini_generate_text_from_image(image,prompt):
     response = None
 
@@ -157,14 +192,3 @@ def create_embeddings_file(path):
     f = open(path + "_vec","w")
     f.write(json.dumps(ret_dic))
     f.close()
-
-
-
-#starting_gemini_client()
-
-#create_image_text(text_restauraunt_url,1)
-#create_image_text(test_url,1)
-
-
-#starting_mistral_client()
-#creating_embeddings_from_text("The Time Out Market Lisbon embodies an industrial-chic aesthetic with its exposed metal framework, high ceilings, and minimalist lighting fixtures. A mix of wood tables and neutral-toned chairs creates a communal dining atmosphere. The ambiance is lively and bustling, filled with the sounds of conversations and culinary activity. It feels modern and cosmopolitan, with a focus on food experiences and social interaction.")
