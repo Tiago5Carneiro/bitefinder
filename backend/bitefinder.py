@@ -1,13 +1,594 @@
 import mysql.connector
 import os
 from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import bcrypt
+import jwt
+import datetime
+import random
+import string
 
+# Load environment variables
 load_dotenv()
 
-conn = mysql.connector.connect(
-    host=os.getenv("DB_HOST"),
-    user=os.getenv("DB_USERNAME"),
-    password=os.getenv("DB_PASSWORD"),
-    database=os.getenv("DB_DATABASE"),
-    port=int(os.getenv("DB_PORT"))
-)
+def get_db_connection():
+    """Establish connection to SingleStore database"""
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USERNAME"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_DATABASE"),
+        port=int(os.getenv("DB_PORT"))
+    )
+    return conn
+
+
+def init_db():
+    """Initialize database tables if they don't exist"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Create user table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user (
+            username VARCHAR(100) PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            password VARCHAR(100) NOT NULL,
+            email VARCHAR(100) NOT NULL
+        )
+        ''')
+        
+        # Create restaurant table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS restaurant (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            rating FLOAT NOT NULL,
+            url_location VARCHAR(255) NOT NULL
+        )
+        ''')
+        
+        # Create group table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS `group` (
+            code VARCHAR(10) PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            status ENUM('active', 'inactive') NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # Create group_user table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS group_user (
+            group_code VARCHAR(10),
+            username VARCHAR(100),
+            PRIMARY KEY (group_code, username)
+        )
+        ''')
+        
+        # Create user_restaurant table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_restaurant (
+            username VARCHAR(100),
+            restaurant_id INT,
+            PRIMARY KEY (username, restaurant_id)
+        )
+        ''')
+        
+        # Create restaurant_image table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS restaurant_image (
+            restaurant_id INT,
+            image_url VARCHAR(255),
+            PRIMARY KEY (restaurant_id, image_url)
+        )
+        ''')
+        
+        conn.commit()
+        print("Database tables created successfully")
+        
+    except Exception as e:
+        print(f"Error creating tables: {e}")
+        conn.rollback()
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+# Add this right after defining the app
+app = Flask(__name__)
+CORS(app)
+
+# Initialize database tables
+init_db()
+
+# JWT configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")  # Change in production
+JWT_EXPIRATION_DAYS = 7
+
+
+
+
+# Helper functions
+def hash_password(password):
+    """Hash a password for storage"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(stored_password, provided_password):
+    """Verify a stored password against one provided by user"""
+    return bcrypt.checkpw(provided_password.encode('utf-8'), stored_password.encode('utf-8'))
+
+def generate_token(username):
+    """Generate a JWT token"""
+    payload = {
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=JWT_EXPIRATION_DAYS),
+        'iat': datetime.datetime.utcnow(),
+        'sub': username
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+def generate_group_code():
+    """Generate a unique 6-character group code"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# USER AUTHENTICATION ENDPOINTS
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    
+    # Basic validation
+    if not all(k in data for k in ('username', 'name', 'email', 'password')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    username = data['username']
+    name = data['name']
+    email = data['email']
+    password = data['password']
+    
+    # Hash the password
+    hashed_password = hash_password(password)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if user already exists
+        cursor.execute("SELECT username FROM user WHERE username = %s OR email = %s", (username, email))
+        if cursor.fetchone():
+            return jsonify({'error': 'Username or email already registered'}), 409
+        
+        # Insert new user
+        cursor.execute(
+            "INSERT INTO user (username, name, password, email) VALUES (%s, %s, %s, %s)",
+            (username, name, hashed_password, email)
+        )
+        conn.commit()
+        
+        return jsonify({'message': 'User registered successfully'}), 201
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    
+    # Allow login with username or email
+    if not (('username' in data or 'email' in data) and 'password' in data):
+        return jsonify({'error': 'Missing login credentials'}), 400
+    
+    password = data['password']
+    login_field = 'username' if 'username' in data else 'email'
+    login_value = data[login_field]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get user by username or email
+        query = f"SELECT username, name, email, password FROM user WHERE {login_field} = %s"
+        cursor.execute(query, (login_value,))
+        user = cursor.fetchone()
+        
+        if not user or not verify_password(user['password'], password):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        # Generate token
+        token = generate_token(user['username'])
+        
+        return jsonify({
+            'token': token,
+            'user': {
+                'username': user['username'],
+                'name': user['name'],
+                'email': user['email']
+            }
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# GROUP MANAGEMENT ENDPOINTS
+@app.route('/groups/create', methods=['POST'])
+def create_group():
+    data = request.get_json()
+    
+    if not all(k in data for k in ('name', 'username')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    name = data['name']
+    username = data['username']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Generate a unique group code (ensure it doesn't already exist)
+        code = generate_group_code()
+        cursor.execute("SELECT code FROM `group` WHERE code = %s", (code,))
+        while cursor.fetchone():
+            code = generate_group_code()
+            cursor.execute("SELECT code FROM `group` WHERE code = %s", (code,))
+        
+        # Create the group
+        cursor.execute(
+            "INSERT INTO `group` (code, name, status) VALUES (%s, %s, 'active')",
+            (code, name)
+        )
+        
+        # Add the creator to the group
+        cursor.execute(
+            "INSERT INTO group_user (group_code, username) VALUES (%s, %s)",
+            (code, username)
+        )
+        
+        conn.commit()
+        
+        return jsonify({
+            'message': 'Group created successfully',
+            'code': code,
+            'name': name
+        }), 201
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/groups/join', methods=['POST'])
+def join_group():
+    data = request.get_json()
+    
+    if not all(k in data for k in ('code', 'username')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    code = data['code']
+    username = data['username']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Check if the group exists and is active
+        cursor.execute("SELECT * FROM `group` WHERE code = %s AND status = 'active'", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found or inactive'}), 404
+        
+        # Check if user is already in the group
+        cursor.execute("SELECT * FROM group_user WHERE group_code = %s AND username = %s", (code, username))
+        if cursor.fetchone():
+            return jsonify({'error': 'User already in this group'}), 409
+        
+        # Add user to the group
+        cursor.execute(
+            "INSERT INTO group_user (group_code, username) VALUES (%s, %s)",
+            (code, username)
+        )
+        
+        conn.commit()
+        
+        return jsonify({
+            'message': 'Joined group successfully',
+            'group': {
+                'code': group['code'],
+                'name': group['name']
+            }
+        }), 200
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/groups/user/<username>', methods=['GET'])
+def get_user_groups(username):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+            
+        cursor.execute("""
+            SELECT g.code, g.name, g.status, g.created_at
+            FROM `group` g
+            JOIN group_user gu ON g.code = gu.group_code
+            WHERE gu.username = %s AND g.status = 'active'
+        """, (username,))
+        
+        groups = cursor.fetchall()
+        
+        return jsonify({'groups': groups}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# RESTAURANT ENDPOINTS
+@app.route('/restaurants', methods=['GET'])
+def get_restaurants():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("SELECT * FROM restaurant")
+        restaurants = cursor.fetchall()
+        
+        # Get images for each restaurant
+        for restaurant in restaurants:
+            restaurant_id = restaurant['id']
+            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
+            images = cursor.fetchall()
+            restaurant['images'] = [img['image_url'] for img in images]
+            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
+        
+        return jsonify({'restaurants': restaurants}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/restaurants/<int:restaurant_id>', methods=['GET'])
+def get_restaurant(restaurant_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get restaurant details
+        cursor.execute("SELECT * FROM restaurant WHERE id = %s", (restaurant_id,))
+        restaurant = cursor.fetchone()
+        
+        if not restaurant:
+            return jsonify({'error': 'Restaurant not found'}), 404
+        
+        # Get restaurant images
+        cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
+        images = cursor.fetchall()
+        
+        restaurant['images'] = [img['image_url'] for img in images]
+        restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
+        
+        return jsonify({'restaurant': restaurant}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+@app.route('/users', methods=['GET'])
+def get_users():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("SELECT username, name, email FROM user")
+        users = cursor.fetchall()
+        
+        return jsonify({'users': users}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/users/<username>/favorites', methods=['GET'])
+def get_user_favorites(username):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Get user's favorite restaurants
+        cursor.execute("""
+            SELECT r.* 
+            FROM restaurant r
+            JOIN user_restaurant ur ON r.id = ur.restaurant_id
+            WHERE ur.username = %s
+        """, (username,))
+        
+        restaurants = cursor.fetchall()
+        
+        # Get images for each restaurant
+        for restaurant in restaurants:
+            restaurant_id = restaurant['id']
+            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
+            images = cursor.fetchall()
+            restaurant['images'] = [img['image_url'] for img in images]
+            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
+        
+        return jsonify({'favorites': restaurants}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/users/<username>/favorites/<int:restaurant_id>', methods=['POST'])
+def add_favorite(username, restaurant_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Check if restaurant exists
+        cursor.execute("SELECT id FROM restaurant WHERE id = %s", (restaurant_id,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Restaurant not found'}), 404
+        
+        # Check if already a favorite
+        cursor.execute("SELECT * FROM user_restaurant WHERE username = %s AND restaurant_id = %s", 
+                     (username, restaurant_id))
+        if cursor.fetchone():
+            return jsonify({'message': 'Restaurant already in favorites'}), 200
+        
+        # Add to favorites
+        cursor.execute("""
+            INSERT INTO user_restaurant (username, restaurant_id)
+            VALUES (%s, %s)
+        """, (username, restaurant_id))
+        
+        conn.commit()
+        
+        return jsonify({'message': 'Restaurant added to favorites'}), 201
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/users/<username>/favorites/<int:restaurant_id>', methods=['DELETE'])
+def remove_favorite(username, restaurant_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Validate that user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Remove from favorites
+        cursor.execute("""
+            DELETE FROM user_restaurant
+            WHERE username = %s AND restaurant_id = %s
+        """, (username, restaurant_id))
+        
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Restaurant not in favorites'}), 404
+            
+        return jsonify({'message': 'Restaurant removed from favorites'}), 200
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# RESTAURANT MANAGEMENT ENDPOINTS
+@app.route('/restaurants', methods=['POST'])
+def add_restaurant():
+    data = request.get_json()
+    
+    if not all(k in data for k in ('name', 'rating', 'url_location')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    name = data['name']
+    rating = data['rating']
+    url_location = data['url_location']
+    image_urls = data.get('image_urls', [])
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Add restaurant
+        cursor.execute("""
+            INSERT INTO restaurant (name, rating, url_location)
+            VALUES (%s, %s, %s)
+        """, (name, rating, url_location))
+        
+        # Get the ID of the new restaurant
+        restaurant_id = cursor.lastrowid
+        
+        # Add images
+        for image_url in image_urls:
+            cursor.execute("""
+                INSERT INTO restaurant_image (restaurant_id, image_url)
+                VALUES (%s, %s)
+            """, (restaurant_id, image_url))
+        
+        conn.commit()
+        
+        return jsonify({
+            'message': 'Restaurant added successfully',
+            'restaurant_id': restaurant_id
+        }), 201
+    
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

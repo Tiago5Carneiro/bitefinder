@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { StyleSheet, TextInput, TouchableOpacity } from "react-native";
+import {
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
 import { router } from "expo-router";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -8,10 +13,10 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginScreen() {
-  // Make sure this is export default
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { signIn } = useAuth();
 
   const inputBackground = useThemeColor({}, "background");
@@ -20,16 +25,20 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     // Basic validation
-    if (!email || !password) {
+    if (!username || !password) {
       setError("Please fill in all fields");
       return;
     }
 
+    setError("");
+    setIsSubmitting(true);
+
     try {
-      await signIn(email, password);
-    } catch (err) {
-      setError("Invalid email or password");
-      console.error(err);
+      await signIn(username, password);
+    } catch (err: any) {
+      setError(err.message || "Login failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -46,12 +55,11 @@ export default function LoginScreen() {
           styles.input,
           { backgroundColor: inputBackground, color: textColor },
         ]}
-        placeholder="Email"
+        placeholder="Username"
         placeholderTextColor="#888"
-        value={email}
-        onChangeText={setEmail}
+        value={username}
+        onChangeText={setUsername}
         autoCapitalize="none"
-        keyboardType="email-address"
       />
 
       <TextInput
@@ -67,10 +75,19 @@ export default function LoginScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: tintColor }]}
+        style={[
+          styles.button,
+          { backgroundColor: tintColor },
+          isSubmitting && styles.disabledButton,
+        ]}
         onPress={handleLogin}
+        disabled={isSubmitting}
       >
-        <ThemedText style={styles.buttonText}>Sign In</ThemedText>
+        {isSubmitting ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <ThemedText style={styles.buttonText}>Sign In</ThemedText>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push("/(auth)/register")}>
@@ -106,6 +123,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 15,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   buttonText: {
     fontSize: 16,

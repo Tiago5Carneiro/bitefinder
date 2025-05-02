@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { StyleSheet, TextInput, TouchableOpacity } from "react-native";
+import {
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
 import { router } from "expo-router";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -8,12 +13,13 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function RegisterScreen() {
-  // Make sure this is export default
+  const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { signUp } = useAuth();
 
   const inputBackground = useThemeColor({}, "background");
@@ -22,7 +28,7 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     // Basic validation
-    if (!name || !email || !password || !confirmPassword) {
+    if (!username || !name || !email || !password || !confirmPassword) {
       setError("Please fill in all fields");
       return;
     }
@@ -32,11 +38,15 @@ export default function RegisterScreen() {
       return;
     }
 
+    setError("");
+    setIsSubmitting(true);
+
     try {
-      await signUp(name, email, password);
-    } catch (err) {
-      setError("Registration failed");
-      console.error(err);
+      await signUp(username, name, email, password);
+    } catch (err: any) {
+      setError(err.message || "Registration failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -47,6 +57,18 @@ export default function RegisterScreen() {
       </ThemedText>
 
       {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
+
+      <TextInput
+        style={[
+          styles.input,
+          { backgroundColor: inputBackground, color: textColor },
+        ]}
+        placeholder="Username"
+        placeholderTextColor="#888"
+        value={username}
+        onChangeText={setUsername}
+        autoCapitalize="none"
+      />
 
       <TextInput
         style={[
@@ -97,10 +119,19 @@ export default function RegisterScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: tintColor }]}
+        style={[
+          styles.button,
+          { backgroundColor: tintColor },
+          isSubmitting && styles.disabledButton,
+        ]}
         onPress={handleRegister}
+        disabled={isSubmitting}
       >
-        <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+        {isSubmitting ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
@@ -136,6 +167,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 15,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   buttonText: {
     fontSize: 16,
