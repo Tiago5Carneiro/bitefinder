@@ -6,8 +6,12 @@ import {
   View,
   ScrollView,
   Dimensions,
+  Linking,
+  StatusBar,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -15,183 +19,202 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 
 // Get screen dimensions
 const { width } = Dimensions.get("window");
-const cardWidth = width - 32; // Card width with margins
-
-// Mock data para restaurantes
-const MOCK_RESTAURANTS = [
-  {
-    id: "1",
-    name: "Sushi Paradise",
-    image:
-      "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Japanese",
-    rating: 4.5,
-    priceRange: "$$",
-    distance: "0.8 miles",
-    description: "A cozy place with delicate flavors and calm atmosphere.",
-    ambiance: "Calm",
-  },
-  {
-    id: "2",
-    name: "Burger Joint",
-    image:
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "American",
-    rating: 4.2,
-    priceRange: "$",
-    distance: "1.2 miles",
-    description: "Vibrant spot with great music and energetic crowds.",
-    ambiance: "Energetic",
-  },
-  {
-    id: "3",
-    name: "Pasta Palace",
-    image:
-      "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Italian",
-    rating: 4.7,
-    priceRange: "$$$",
-    distance: "2.1 miles",
-    description: "Elegant restaurant with romantic atmosphere and fine wines.",
-    ambiance: "Romantic",
-  },
-  {
-    id: "4",
-    name: "Taco Fiesta",
-    image:
-      "https://images.unsplash.com/photo-1552332386-f8dd00dc2f85?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Mexican",
-    rating: 4.1,
-    priceRange: "$",
-    distance: "0.6 miles",
-    description:
-      "Casual Mexican spot with lively music and colorful decorations.",
-    ambiance: "Lively",
-  },
-  {
-    id: "5",
-    name: "Golden Dragon",
-    image:
-      "https://images.unsplash.com/photo-1563245372-f21724e3856d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Chinese",
-    rating: 4.3,
-    priceRange: "$$",
-    distance: "1.5 miles",
-    description:
-      "Authentic dishes in a comfortable setting with warm lighting.",
-    ambiance: "Comfortable",
-  },
-];
+const cardWidth = width - 32;
 
 export default function SoloSelectionScreen() {
-  const { description } = useLocalSearchParams();
   const tintColor = useThemeColor({}, "tint");
   const cardBackground = useThemeColor({}, "card");
+  const textColor = useThemeColor({}, "text");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [restaurants, setRestaurants] = useState(MOCK_RESTAURANTS);
-  const [filteredText, setFilteredText] = useState("");
+  const API_URL = "http://localhost:5000";
+
+  // Helper function to convert price level to $ symbols
+  const formatPriceLevel = (priceLevel: number | string) => {
+    if (priceLevel === "price_level" || priceLevel === 0)
+      return "Price not available";
+    if (typeof priceLevel === "number") {
+      return "$".repeat(priceLevel);
+    }
+    return priceLevel;
+  };
 
   useEffect(() => {
-    if (description) {
-      console.log("User description:", description);
-      setFilteredText(description.toString());
+    const loadRestaurants = async () => {
+      setIsLoading(true);
+      try {
+        const userData = await AsyncStorage.getItem("userData");
+        const userToken = await AsyncStorage.getItem("userToken");
 
-      // Aqui você implementaria a lógica real de filtragem baseada na descrição
-      // Por enquanto, apenas simularemos que os restaurantes foram filtrados
+        if (userData && userToken) {
+          const user = JSON.parse(userData);
+          setCurrentUser(user);
 
-      // A lógica de filtragem real poderia usar:
-      // 1. Análise de sentimento
-      // 2. Matching de palavras-chave
-      // 3. Integração com API de IA para processar a linguagem natural
+          // Fetch restaurants for this user
+          const response = await fetch(
+            `${API_URL}/restaurants/${user.username}`,
+            {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${userToken}`,
+              },
+            }
+          );
 
-      // Simular a filtragem por enquanto (não mudamos de fato os dados)
-      setRestaurants([...MOCK_RESTAURANTS]);
-    }
-  }, [description]);
+          if (response.ok) {
+            const data = await response.json();
+            const validRestaurants = data.restaurants.filter(
+              (r: any) => r.restaurant_name !== "name"
+            );
+            setRestaurants(validRestaurants);
+          } else {
+            console.error("Failed to fetch restaurants:", response.status);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading restaurants:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRestaurants();
+  }, []);
+
+  const openMapLocation = (url: string) => {
+    Linking.openURL(url).catch((err) =>
+      console.error("Error opening map location:", err)
+    );
+  };
+
+  // Fixed back button handler
+  const handleBack = () => {
+    router.replace("/(tabs)");
+  };
 
   return (
     <ThemedView style={styles.container}>
+      <StatusBar barStyle="light-content" />
+
+      {/* Improved header with better back button */}
       <ThemedView style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           style={styles.backButton}
+          accessibilityLabel="Go back"
         >
-          <ThemedText style={styles.backButtonText}>← Back</ThemedText>
+          <Ionicons name="arrow-back" size={24} color={textColor} />
+          <ThemedText style={styles.backButtonText}>Back</ThemedText>
         </TouchableOpacity>
 
-        <ThemedText type="subtitle">Restaurant Suggestions</ThemedText>
-
+        <ThemedText style={styles.headerTitle}>Suggestions</ThemedText>
         <View style={styles.placeholder} />
       </ThemedView>
-
-      {filteredText ? (
-        <ThemedView style={styles.filterInfo}>
-          <ThemedText style={styles.filterText}>
-            Showing restaurants based on:
-          </ThemedText>
-          <ThemedText style={styles.filterDescription}>
-            "{filteredText}"
-          </ThemedText>
-        </ThemedView>
-      ) : null}
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
-        {restaurants.map((restaurant) => (
-          <TouchableOpacity
-            key={restaurant.id}
-            style={[styles.restaurantCard, { backgroundColor: cardBackground }]}
-            onPress={() => {
-              // Navegar para detalhes do restaurante
-              alert(`Selected: ${restaurant.name}`);
-            }}
-            activeOpacity={0.9}
-          >
-            <Image
-              source={{ uri: restaurant.image }}
-              style={styles.restaurantImage}
+        {isLoading ? (
+          <ThemedView style={styles.loadingContainer}>
+            <ThemedText style={styles.loadingText}>
+              Finding the perfect places for you...
+            </ThemedText>
+          </ThemedView>
+        ) : restaurants.length === 0 ? (
+          <ThemedView style={styles.emptyContainer}>
+            <Ionicons
+              name="restaurant-outline"
+              size={64}
+              color={textColor}
+              style={{ opacity: 0.5 }}
             />
+            <ThemedText style={styles.emptyText}>
+              No restaurants found. Try adjusting your preferences.
+            </ThemedText>
+          </ThemedView>
+        ) : (
+          restaurants.map((restaurant, index) => (
+            <ThemedView
+              key={restaurant.url || index}
+              style={[
+                styles.restaurantCard,
+                { backgroundColor: cardBackground },
+              ]}
+            >
+              <Image
+                source={{
+                  uri:
+                    restaurant.images && restaurant.images.length > 0
+                      ? restaurant.images[0]
+                      : "https://via.placeholder.com/500x300?text=No+Image",
+                }}
+                style={styles.restaurantImage}
+              />
 
-            <View style={styles.ratingBadge}>
-              <ThemedText style={styles.ratingText}>
-                {restaurant.rating}
-              </ThemedText>
-            </View>
-
-            <ThemedView style={styles.cardContent}>
-              <ThemedText type="title" style={styles.restaurantName}>
-                {restaurant.name}
-              </ThemedText>
-
-              <ThemedView style={styles.detailsRow}>
-                <ThemedText style={styles.cuisineText}>
-                  {restaurant.cuisine}
+              {/* Enhanced rating badge */}
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={16} color="#FFD700" />
+                <ThemedText style={styles.ratingText}>
+                  {typeof restaurant.rating === "number"
+                    ? restaurant.rating.toFixed(1)
+                    : "N/A"}
                 </ThemedText>
-                <ThemedText style={styles.priceText}>
-                  {restaurant.priceRange}
-                </ThemedText>
-              </ThemedView>
+              </View>
 
-              <ThemedView style={styles.detailsRow}>
-                <ThemedView style={styles.ambianceTag}>
-                  <ThemedText style={styles.ambianceText}>
-                    {restaurant.ambiance}
-                  </ThemedText>
+              <ThemedView style={styles.cardContent}>
+                <ThemedText style={styles.restaurantName}>
+                  {restaurant.restaurant_name}
+                </ThemedText>
+
+                <ThemedView style={styles.detailsRow}>
+                  <View style={styles.priceContainer}>
+                    <ThemedText style={styles.priceText}>
+                      {formatPriceLevel(restaurant.price_level)}
+                    </ThemedText>
+
+                    {restaurant.price_range && (
+                      <ThemedText style={styles.priceRangeText}>
+                        {restaurant.price_range}
+                      </ThemedText>
+                    )}
+                  </View>
                 </ThemedView>
-                <ThemedText style={styles.distanceText}>
-                  {restaurant.distance}
-                </ThemedText>
-              </ThemedView>
 
-              <ThemedText style={styles.descriptionText} numberOfLines={2}>
-                {restaurant.description}
-              </ThemedText>
+                {restaurant.summary ? (
+                  <ThemedText style={styles.descriptionText} numberOfLines={3}>
+                    {restaurant.summary}
+                  </ThemedText>
+                ) : (
+                  <ThemedText
+                    style={[
+                      styles.descriptionText,
+                      { fontStyle: "italic", opacity: 0.6 },
+                    ]}
+                  >
+                    No description available
+                  </ThemedText>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.mapButton, { backgroundColor: tintColor }]}
+                  onPress={() =>
+                    restaurant.url && openMapLocation(restaurant.url)
+                  }
+                >
+                  <Ionicons name="location" size={18} color="white" />
+                  <ThemedText style={styles.mapButtonText}>
+                    View in Maps
+                  </ThemedText>
+                </TouchableOpacity>
+              </ThemedView>
             </ThemedView>
-          </TouchableOpacity>
-        ))}
+          ))
+        )}
       </ScrollView>
     </ThemedView>
   );
@@ -207,103 +230,141 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 60,
-    paddingBottom: 15,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.1)",
   },
   backButton: {
+    flexDirection: "row",
+    alignItems: "center",
     padding: 8,
   },
   backButtonText: {
     fontSize: 16,
+    marginLeft: 4,
+    fontWeight: "500",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "600",
   },
   placeholder: {
-    width: 50,
-  },
-  filterInfo: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginBottom: 8,
-  },
-  filterText: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  filterDescription: {
-    fontSize: 16,
-    fontStyle: "italic",
-    marginTop: 5,
+    width: 70,
   },
   scrollView: {
     flex: 1,
   },
   scrollViewContent: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingVertical: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 50,
+  },
+  loadingText: {
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 100,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 50,
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 16,
+    opacity: 0.7,
   },
   restaurantCard: {
-    borderRadius: 20,
+    borderRadius: 16,
     marginBottom: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 8,
+    elevation: 4,
     overflow: "hidden",
   },
   restaurantImage: {
     width: "100%",
-    height: 160,
+    height: 180,
+    resizeMode: "cover",
   },
   ratingBadge: {
     position: "absolute",
     top: 12,
     right: 12,
     backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   ratingText: {
-    fontWeight: "bold",
+    fontWeight: "700",
     fontSize: 14,
+    marginLeft: 4,
+    color: "black",
   },
   cardContent: {
-    padding: 16,
+    padding: 18,
   },
   restaurantName: {
-    fontSize: 20,
-    marginBottom: 6,
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 8,
   },
   detailsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  cuisineText: {
-    fontSize: 14,
-    opacity: 0.8,
+  priceContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   priceText: {
-    fontSize: 14,
+    fontSize: 15,
     opacity: 0.8,
-  },
-  ambianceTag: {
-    backgroundColor: "rgba(78, 205, 196, 0.2)",
+    backgroundColor: "rgba(0,0,0,0.05)",
     paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 12,
+    marginRight: 8,
   },
-  ambianceText: {
-    fontSize: 12,
-  },
-  distanceText: {
+  priceRangeText: {
     fontSize: 14,
     opacity: 0.7,
   },
   descriptionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    opacity: 0.7,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  mapButton: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 8,
     marginTop: 4,
+  },
+  mapButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "white",
+    marginLeft: 6,
   },
 });

@@ -15,18 +15,89 @@ import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 
 // place preference
-const AMBIANCE_OPTIONS = ["Rustic", "Modern", "Futuristic", "Minimalistic", "Nature", "Indoor", "Outdoor"];
-const COLOR_OPTIONS = ["Warm", "Cool", "Neutral", "Vibrant", "Dark", "Light", "Colorful"];
-const PRICE_OPTIONS = ["Budget-friendly", "Mid-Range","Upscale"];
+const AMBIANCE_OPTIONS = [
+  "Rustic",
+  "Modern",
+  "Futuristic",
+  "Minimalistic",
+  "Nature",
+  "Indoor",
+  "Outdoor",
+];
+const COLOR_OPTIONS = [
+  "Warm",
+  "Cool",
+  "Neutral",
+  "Vibrant",
+  "Dark",
+  "Light",
+  "Colorful",
+];
+const PRICE_OPTIONS = ["Budget-friendly", "Mid-Range", "Upscale"];
 const CROWD_OPTIONS = ["Quiet", "Lively"];
-const CUISINE_OPTIONS = ["Traditional", "Gourmet", "Cousy", "Exotic", "Fusion", "Street Food", "Fast Food", "Healthy", "Vegetarian", "Vegan"];
+const CUISINE_OPTIONS = [
+  "Traditional",
+  "Gourmet",
+  "Cousy",
+  "Exotic",
+  "Fusion",
+  "Street Food",
+  "Fast Food",
+  "Healthy",
+  "Vegetarian",
+  "Vegan",
+];
 
 // food preference
-const FLAVOR_OPTIONS = ["Sweet", "Savory", "Spicy", "Sour", "Umami", "Bitter", "Smoky", "Tangy", "Herbal"];
-const TEXTURE_OPTIONS = ["Crispy", "Creamy", "Crunchy", "Tender", "Juicy", "Chewy", "Flaky", "Silky", "Soft"];
-const PRESENTATION_OPTIONS = ["Plated", "Buffet", "Bento", "Bowl", "Tasting Menu", "Handheld"];
-const MEAL_OPTIONS = ["Breakfast", "Brunch", "Lunch", "Dinner", "Late Night", "Snacks", "Dessert"];
-const INGREDIENT_OPTIONS = ["Organic", "Local", "Seasonal", "Farm-to-Table", "Foraged", "Sustainable", "Seafood-Based", "Plant-Based"];
+const FLAVOR_OPTIONS = [
+  "Sweet",
+  "Savory",
+  "Spicy",
+  "Sour",
+  "Umami",
+  "Bitter",
+  "Smoky",
+  "Tangy",
+  "Herbal",
+];
+const TEXTURE_OPTIONS = [
+  "Crispy",
+  "Creamy",
+  "Crunchy",
+  "Tender",
+  "Juicy",
+  "Chewy",
+  "Flaky",
+  "Silky",
+  "Soft",
+];
+const PRESENTATION_OPTIONS = [
+  "Plated",
+  "Buffet",
+  "Bento",
+  "Bowl",
+  "Tasting Menu",
+  "Handheld",
+];
+const MEAL_OPTIONS = [
+  "Breakfast",
+  "Brunch",
+  "Lunch",
+  "Dinner",
+  "Late Night",
+  "Snacks",
+  "Dessert",
+];
+const INGREDIENT_OPTIONS = [
+  "Organic",
+  "Local",
+  "Seasonal",
+  "Farm-to-Table",
+  "Foraged",
+  "Sustainable",
+  "Seafood-Based",
+  "Plant-Based",
+];
 
 export default function RegisterScreen() {
   const [username, setUsername] = useState("");
@@ -36,7 +107,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // place preferences
   const [ambiancePreference, setAmbiancePreference] = useState("");
   const [colorPreference, setColorPreference] = useState("");
@@ -50,7 +121,7 @@ export default function RegisterScreen() {
   const [presentationPreference, setPresentationPreference] = useState("");
   const [mealPreference, setMealPreference] = useState("");
   const [ingredientPreference, setIngredientPreference] = useState("");
-  
+
   const { signUp } = useAuth();
 
   const inputBackground = useThemeColor({}, "background");
@@ -88,7 +159,17 @@ export default function RegisterScreen() {
       if (mealPreference) food_preferences.push(mealPreference);
       if (ingredientPreference) food_preferences.push(ingredientPreference);
 
-      await signUp(username, name, email, password, place_preferences, food_preferences);
+      console.log("place_preferences", place_preferences);
+      console.log("food_preferences", food_preferences);
+
+      await signUp(
+        username,
+        name,
+        email,
+        password,
+        place_preferences,
+        food_preferences
+      );
     } catch (err: any) {
       setError(err.message || "Registration failed");
     } finally {
@@ -112,14 +193,17 @@ export default function RegisterScreen() {
             style={[
               styles.optionButton,
               { borderColor: borderColor },
-              selectedValue === option && { backgroundColor: tintColor, borderColor: tintColor }
+              selectedValue === option && {
+                backgroundColor: tintColor,
+                borderColor: tintColor,
+              },
             ]}
             onPress={() => setSelectedValue(option)}
           >
-            <ThemedText 
+            <ThemedText
               style={[
                 styles.optionText,
-                selectedValue === option && styles.selectedOptionText
+                selectedValue === option && styles.selectedOptionText,
               ]}
             >
               {option}
@@ -137,7 +221,9 @@ export default function RegisterScreen() {
           Create Account
         </ThemedText>
 
-        {error ? <ThemedText style={styles.errorText}>{error}</ThemedText> : null}
+        {error ? (
+          <ThemedText style={styles.errorText}>{error}</ThemedText>
+        ) : null}
 
         <TextInput
           style={[
@@ -203,73 +289,73 @@ export default function RegisterScreen() {
           <ThemedText type="subtitle" style={styles.preferencesTitle}>
             Food Preferences (Optional)
           </ThemedText>
-          
+
           {renderOptions(
-            AMBIANCE_OPTIONS, 
-            ambiancePreference, 
+            AMBIANCE_OPTIONS,
+            ambiancePreference,
             setAmbiancePreference,
             "Ambiance"
           )}
 
           {renderOptions(
-            COLOR_OPTIONS, 
-            colorPreference, 
+            COLOR_OPTIONS,
+            colorPreference,
             setColorPreference,
             "Color Scheme"
           )}
 
           {renderOptions(
-            PRICE_OPTIONS, 
-            pricePreference, 
+            PRICE_OPTIONS,
+            pricePreference,
             setPricePreference,
             "Price Range"
           )}
-          
+
           {renderOptions(
-            CROWD_OPTIONS, 
-            crowdPreference, 
+            CROWD_OPTIONS,
+            crowdPreference,
             setCrowdPreference,
             "Atmosphere"
           )}
-          
+
           {renderOptions(
-            CUISINE_OPTIONS, 
-            cuisinePreference, 
+            CUISINE_OPTIONS,
+            cuisinePreference,
             setCuisinePreference,
             "Cuisine Type"
           )}
 
           {renderOptions(
-            FLAVOR_OPTIONS, 
-            flavourPreference, 
+            FLAVOR_OPTIONS,
+            flavourPreference,
             setflavourPreference,
             "Flavor Preference"
           )}
 
           {renderOptions(
-            TEXTURE_OPTIONS, 
-            texturePreference, 
+            TEXTURE_OPTIONS,
+            texturePreference,
             setTexturePreference,
             "Texture"
           )}
 
           {renderOptions(
-            PRESENTATION_OPTIONS, 
-            presentationPreference, 
+            PRESENTATION_OPTIONS,
+            presentationPreference,
             setPresentationPreference,
             "Presentation"
           )}
 
           {renderOptions(
-            MEAL_OPTIONS, 
-            mealPreference, 
+            MEAL_OPTIONS,
+            mealPreference,
             setMealPreference,
             "Meal Preference"
           )}
 
           {renderOptions(
-            INGREDIENT_OPTIONS, 
-            ingredientPreference, 
+            INGREDIENT_OPTIONS,
+            ingredientPreference,
             setIngredientPreference,
             "Ingredient Preference"
           )}

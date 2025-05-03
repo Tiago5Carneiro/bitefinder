@@ -56,7 +56,7 @@ def drop_all_tables():
         cursor.close()
         conn.close()
 # Uncomment the line below to drop all tables before initializing
-# drop_all_tables()
+#drop_all_tables()
 
 def init_db():
     """Initialize database tables if they don't exist"""
@@ -289,15 +289,16 @@ def register():
     data = request.get_json()
     
     # Basic validation
-    if not all(k in data for k in ('username', 'name', 'email', 'password','food-pref','place-pref')):
+    if not all(k in data for k in ('username', 'name', 'email', 'password','place_preferences','food_preferences')):
+        print(data)
         return jsonify({'error': 'Missing required fields'}), 400
     
     username = data['username']
     name = data['name']
     email = data['email']
     password = data['password']
-    food_preferences = data['food-pref']
-    place_preferences = data['place-pref']
+    food_preferences = data['food_preferences']
+    place_preferences = data['place_preferences']
 
     food_embbeding = vect.create_embeddings_from_preferences(food_preferences,1)
     place_embbeding = vect.create_embeddings_from_preferences(place_preferences)
@@ -632,41 +633,92 @@ def get_restaurants_preference(username):
     
     try:
         cursor.execute("SELECT history_food_vector, history_place_vector FROM user WHERE username = %s AND history > 0",(username,))
-        history_food_vector, history_place_vector = cursor.fetchall()[0]
 
+        response = cursor.fetchall()
+        if len(response) != 0 :
+            history_food_vector, history_place_vector = cursor.fetchall()[0]
+            history_food_vector = json.loads(history_food_vector)
+            history_place_vector = json.loads(history_place_vector)
+        
         cursor.execute("SELECT food_vector, place_vector FROM user WHERE username = %s",(username,))
         food_vector, place_vector = cursor.fetchall()[0]
+        place_vector = json.loads(place_vector)
         
-        place_vector = vect.average_embedding([history_place_vector,place_vector])
-        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
+        if len(response) != 0:
+            place_vector = vect.average_embedding([history_place_vector,place_vector])
 
-        cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+        print(type(place_vector))
+        print(place_vector)
+
+        cursor1 = conn.cursor(dictionary=True)
+
+        cursor1.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
+
+        cursor1.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
 
         restaurants = cursor.fetchall()
+        print(food_vector)
+        food_vector = json.loads(food_vector)
 
-        food_vector = vect.average_embedding([history_food_vector,food_vector])
-        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
+        if len(response) != 0:
+            food_vector = vect.average_embedding([history_food_vector,food_vector])
+        cursor1.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
 
-        cursor.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+        print("1234")
 
-        restaurants = restaurants + cursor.fetchall()
+        cursor1.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
 
-        restaurants = list(set(restaurants))
 
+        print("123213123")
+        restaurants = restaurants + cursor1.fetchall()
+        restaurants_no_doubles = []
+        for item in restaurants:
+            if restaurants.count(item) > 1 and item not in restaurants_no_doubles:
+                restaurants_no_doubles.append(item)
+
+        print("123323")
         # Get images for each restaurant
+        out_restaurants = []
         for restaurant in restaurants:
-            restaurant_id = restaurant['restaurant_id']  # Changed from 'id' to 'restaurant_id'
-            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
-            images = cursor.fetchall()
-            restaurant['images'] = [img['image_url'] for img in images]
-            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
-        
-        return jsonify({'restaurants': restaurants}), 200
+            print(len(restaurant))
+            restaurant_id, restaurant_name,rating, url,_,_,price_range_max,price_range_min,price_level,_,_,_,summary,_ = restaurant
+
+            print(restaurant_id)
+            cursor1.execute("SELECT url FROM photo WHERE restaurant_id = %s LIMIT 1", (restaurant_id,))
+            print("HOLLLAAA")
+            images = cursor1.fetchall()
+            if price_range_min == 0:
+                out_restaurant = {
+                'restaurant_name': restaurant_name,
+                'rating': rating,
+                'url':url,
+                'price_level':price_level,
+                'summary':summary,
+                'images': [img['url'] for img in images],
+                'price_range': "" 
+
+            }
+            else :
+                out_restaurant = {
+                    'restaurant_name': restaurant_name,
+                    'rating': rating,
+                    'url':url,
+                    'price_level':price_level,
+                    'summary':summary,
+                    'images': [img['url'] for img in images],
+                    'price_range': "(" + str(price_range_min) + "€-" + str(price_range_max) + "€)" 
+
+                }
+            print(out_restaurant['restaurant_name'])
+            out_restaurants.append(out_restaurant)
+
+        return jsonify({'restaurants': out_restaurants}), 200
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
     finally:
+        cursor1.close()
         cursor.close()
         conn.close()
 
@@ -1016,7 +1068,7 @@ def update_group_status(code):
 def start_restaurant_selection(code):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
+    cursor1 = conn.cursor()
     try:
         # Check if the group exists
         cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
@@ -1043,26 +1095,53 @@ def start_restaurant_selection(code):
         )
         conn.commit()
 
-        cursor.execute('''
-            SELECT place_vector, food_vector, history_place_vector, history_food_vector FROM user WHERE username 
-            IN (SELECT username FROM group_user WHERE group_code = %s )
+        cursor1.execute('''
+            SELECT place_vector, food_vector FROM user WHERE username 
+            IN (SELECT username FROM group_user WHERE group_code = %s)
         ''',(code,))
 
-        zipped = zip(*cursor.fetchall())
+        result = cursor1.fetchall()
+        print(result,len(result[0]),len(result[1]))
+        #zipped = zip(*result)
 
-        place_vector = zipped[0]
-        food_vector = zipped[1]
-        history_place_vector = zipped[2]
-        history_food_vector = zipped[3]
+#        cursor.execute('''
+#            SELECT  history_place_vector, history_food_vector FROM user WHERE username 
+#            IN (SELECT username FROM group_user WHERE group_code = %s )
+#        ''',(code,))
+
+#        zipped1 = zip(*cursor.fetchall())
+        
+        place_vector = []
+        food_vector = []
+        history_place_vector = []
+        history_food_vector = []
+
+        temp_place_vector = [result[0][0],result[1][0]]
+        temp_food_vector = [result[0][1],result[1][1]]
+
+#        temp_history_place_vector = zipped1[0]
+#        temp_history_food_vector = zipped1[1]
+
+        for vector in temp_place_vector:
+            place_vector.append(json.loads(vector))
+        for vector in temp_food_vector:
+            food_vector.append(json.loads(vector))
+ #       for vector in temp_history_place_vector:
+ #           history_place_vector.append(json.loads(vector))
+ #       for vector in temp_history_food_vector:
+ #           history_food_vector.append(json.loads(vector))
 
         place_vector = vect.average_embedding(place_vector)
         food_vector = vect.average_embedding(food_vector)
-        history_place_vector = vect.average_embedding(history_place_vector)
-        history_food_vector = vect.average_embedding(history_food_vector)
+    
+#        history_place_vector = vect.average_embedding(history_place_vector)
+#        history_food_vector = vect.average_embedding(history_food_vector)
 
-        place_vector = [place_vector,history_place_vector]
-        food_vector = [food_vector,history_food_vector]
+#        place_vector = [place_vector,history_place_vector]
+#        food_vector = [food_vector,history_food_vector]
         
+#        place_vector = vect.average_embedding(place_vector)
+#        food_vector = vect.average_embedding(food_vector)
 
         # Emitir evento para todos os membros do grupo
         socketio.emit('selection_started', {
@@ -1070,22 +1149,62 @@ def start_restaurant_selection(code):
             'message': 'The host has started restaurant selection'
         }, room=code)
 
+        
+        cursor1.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
 
-        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
+        cursor1.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
 
-        cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+        restaurants = cursor1.fetchall()
 
-        restaurants = cursor.fetchall()
+        cursor1.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
 
-        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
+        cursor1.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
 
-        cursor.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+        restaurants = restaurants + cursor1.fetchall()
 
-        restaurants = restaurants + cursor.fetchall()
+        restaurants_no_doubles = []
+        for item in restaurants:
+            if restaurants.count(item) > 1 and item not in restaurants_no_doubles:
+                restaurants_no_doubles.append(item)
 
-        restaurants = list(set(restaurants))
+        out_restaurants = []
+        for restaurant in restaurants:
+            print(len(restaurant))
+            #if len(restaurant) < 14:
+             #   continue
+            restaurant_id, restaurant_name,rating, url,_,_,price_range_max,price_range_min,price_level,_,_,_,summary,_ = restaurant
 
-        return jsonify({'message': 'Restaurant selection started','restaurants':restaurants}), 200
+            print(restaurant_id)
+            cursor.execute("SELECT url FROM photo WHERE restaurant_id = %s LIMIT 1", (restaurant_id,))
+            images = cursor.fetchall()
+            if price_range_min == 0:
+                out_restaurant = {
+                'restaurant_name': restaurant_name,
+                'rating': rating,
+                'url':url,
+                'price_level':price_level,
+                'summary':summary,
+                'images': [img['url'] for img in images],
+                'price_range': "" 
+
+            }
+            else :
+                out_restaurant = {
+                    'restaurant_name': restaurant_name,
+                    'rating': rating,
+                    'url':url,
+                    'price_level':price_level,
+                    'summary':summary,
+                    'images': [img['url'] for img in images],
+                    'price_range': "(" + str(price_range_min) + "€-" + str(price_range_max) + "€)" 
+
+                }
+            print(out_restaurant['restaurant_name'])
+            out_restaurants.append(out_restaurant)
+
+        print("FINALLL \n\n\n\n\n\n")
+        
+        return jsonify({'restaurants':out_restaurants}), 200
 
         
     except Exception as e:
@@ -1093,6 +1212,7 @@ def start_restaurant_selection(code):
         return jsonify({'error': str(e)}), 500
         
     finally:
+        cursor1.close()
         cursor.close()
         conn.close()
 
@@ -1345,6 +1465,7 @@ def record_group_match(code):
     finally:
         cursor.close()
         conn.close()
+
 @app.route('/match/<username>',methods=['POST'])
 def complete_match(username):
     conn = get_db_connection()
@@ -1360,8 +1481,15 @@ def complete_match(username):
                         IN (SELECT restaurant_id FROM user_history WHERE user = %s)''',(username,))
         
         zipped = zip(*cursor.fetchall())
-        place_vector = zipped[0]
-        food_vector = zipped[1]
+        place_vector = []
+        food_vector = []
+        temp_place_vector = zipped[0]
+        temp_food_vector = zipped[1]
+        for vector in temp_place_vector:
+            place_vector.append(json.loads(vector))
+        for vector in temp_food_vector:
+            food_vector.append(json.loads(vector))
+
         place_vector = vect.average_embbeddings(place_vector)
         food_vector = vect.average_embbeddings(food_vector)
         cursor.execute("UPDATE user SET history_place_vector = %s, history_food_vector = %s, history = history + 1",(place_vector,food_vector,))
