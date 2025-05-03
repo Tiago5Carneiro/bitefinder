@@ -196,10 +196,13 @@ def create_embeddings_file(path):
     f.write(json.dumps(ret_dic))
     f.close()
 
-def create_embeddings_from_preferences(preferences):
+def create_embeddings_from_preferences(preferences, food = 0):
     starting_gemini_client()
     starting_mistral_client()
-    response = text_from_user_restaurant_preferences(preferences)
+    if food == 1 :
+        response = text_from_user_food_preferences(preferences)
+    else : 
+        response = text_from_user_restaurant_preferences(preferences)
     restaurant_vector = creating_embeddings_from_text(response)
     return restaurant_vector
 
@@ -210,7 +213,10 @@ def average_embedding(embeddings):
     if not embeddings:
         return None
     average_embedding = []
-    for x in range(len(embeddings[0])):
+    len_embeddings = len(embeddings[0])
+    if len_embeddings == 1 :
+        return embeddings
+    for x in range():
         average_embedding.append(sum([embedding[x] for embedding in embeddings]) / len(embeddings))
 
     return average_embedding

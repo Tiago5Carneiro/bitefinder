@@ -70,7 +70,12 @@ def init_db():
             username VARCHAR(100) PRIMARY KEY,
             name VARCHAR(80) NOT NULL,
             password VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL
+            email VARCHAR(100) NOT NULL,
+            food_vector VECTOR(4096),
+            place_vector VECTOR(4096),
+            history_food_vector VECTOR(4096),
+            history_place_vector VECTOR(4096),
+            history INT 
         )
         ''')
         
@@ -120,7 +125,9 @@ def init_db():
             status ENUM('active', 'inactive') NOT NULL,
             creator_username VARCHAR(100) NOT NULL,
             max_members INT DEFAULT 6,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            food_vector VECTOR(4096),
+            place_vector VECTOR(4096)
         )
         ''')
         
@@ -149,6 +156,16 @@ def init_db():
             username VARCHAR(100),
             preference VARCHAR(100),
             PRIMARY KEY (username,preference)
+        )
+        ''')
+
+        # Creat user history
+
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_history (
+            username VARCHAR(100) NOT NULL,
+            restaurant_id VARCHAR(100) NOT NULL,
+            id INT AUTO_INCREMENT PRIMARY KEY
         )
         ''')
         
@@ -272,20 +289,22 @@ def register():
     data = request.get_json()
     
     # Basic validation
-    if not all(k in data for k in ('username', 'name', 'email', 'password')):
+    if not all(k in data for k in ('username', 'name', 'email', 'password','food-pref','place-pref')):
         return jsonify({'error': 'Missing required fields'}), 400
     
     username = data['username']
     name = data['name']
     email = data['email']
     password = data['password']
-    
-    place_preferences = data.get('place_preferences', [])
-    food_preferences = data.get('food_preferences', [])
-    
+    food_preferences = data['food-pref']
+    place_preferences = data['place-pref']
+
+    food_embbeding = vect.create_embeddings_from_preferences(food_preferences,1)
+    place_embbeding = vect.create_embeddings_from_preferences(place_preferences)
+
     # Hash the password
     hashed_password = hash_password(password)
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -297,20 +316,18 @@ def register():
         
         # Insert new user
         cursor.execute(
-            "INSERT INTO user (username, name, password, email) VALUES (%s, %s, %s, %s)",
-            (username, name, hashed_password, email)
+            "INSERT INTO user (username, name, password, email, food_vector, place_vector, history) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (username, name, hashed_password, email, json.dumps(food_embbeding), json.dumps(place_embbeding),0)
         )
-        for place_preference in place_preferences:
-            cursor.execute(
-                "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
-                (username, place_preference)
+    
+        for pref in food_preferences:
+            cursor.execute("INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
+                (username, pref)
             )
-        
-        for food_preference in food_preferences:
-            cursor.execute(
-                "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
-                (username, food_preference)
-            )
+        for pref in place_preferences:
+            cursor.execute("INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
+                (username, pref)
+        )
 
         conn.commit()
         
@@ -335,7 +352,7 @@ def login():
     password = data['password']
     login_field = 'username' if 'username' in data else 'email'
     login_value = data[login_field]
-    
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
@@ -614,21 +631,27 @@ def get_restaurants_preference(username):
     cursor = conn.cursor()
     
     try:
-        cursor.execute("SELECT preference FROM user_preference WHERE user = %s",(username,))
-        result = cursor.fetchall()
-        
-        pref_list = []
+        cursor.execute("SELECT history_food_vector, history_place_vector FROM user WHERE username = %s AND history > 0",(username,))
+        history_food_vector, history_place_vector = cursor.fetchall()[0]
 
-        for r in result:
-            pref_list.append(r[0])
-
-        vec = vect.create_embeddings_from_preferences(str(pref_list))
+        cursor.execute("SELECT food_vector, place_vector FROM user WHERE username = %s",(username,))
+        food_vector, place_vector = cursor.fetchall()[0]
         
-        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(vec),))
+        place_vector = vect.average_embedding([history_place_vector,place_vector])
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
 
         cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
 
         restaurants = cursor.fetchall()
+
+        food_vector = vect.average_embedding([history_food_vector,food_vector])
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
+
+        cursor.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+
+        restaurants = restaurants + cursor.fetchall()
+
+        restaurants = list(set(restaurants))
 
         # Get images for each restaurant
         for restaurant in restaurants:
@@ -1007,7 +1030,7 @@ def start_restaurant_selection(code):
             "SELECT COUNT(*) as total, SUM(is_ready) as ready FROM group_user WHERE group_code = %s",
             (code,)
         )
-        
+
         result = cursor.fetchone()
         
         if result['total'] == 0 or result['ready'] < result['total']:
@@ -1018,16 +1041,52 @@ def start_restaurant_selection(code):
             "UPDATE `group` SET status = 'selecting' WHERE code = %s",
             (code,)
         )
-        
         conn.commit()
+
+        cursor.execute('''
+            SELECT place_vector, food_vector, history_place_vector, history_food_vector FROM user WHERE username 
+            IN (SELECT username FROM group_user WHERE group_code = %s )
+        ''',(code,))
+
+        zipped = zip(*cursor.fetchall())
+
+        place_vector = zipped[0]
+        food_vector = zipped[1]
+        history_place_vector = zipped[2]
+        history_food_vector = zipped[3]
+
+        place_vector = vect.average_embedding(place_vector)
+        food_vector = vect.average_embedding(food_vector)
+        history_place_vector = vect.average_embedding(history_place_vector)
+        history_food_vector = vect.average_embedding(history_food_vector)
+
+        place_vector = [place_vector,history_place_vector]
+        food_vector = [food_vector,history_food_vector]
         
+
         # Emitir evento para todos os membros do grupo
         socketio.emit('selection_started', {
             'group_code': code,
             'message': 'The host has started restaurant selection'
         }, room=code)
-        
-        return jsonify({'message': 'Restaurant selection started'}), 200
+
+
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(place_vector),))
+
+        cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+
+        restaurants = cursor.fetchall()
+
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(food_vector),))
+
+        cursor.execute("SELECT *, food_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+
+        restaurants = restaurants + cursor.fetchall()
+
+        restaurants = list(set(restaurants))
+
+        return jsonify({'message': 'Restaurant selection started','restaurants':restaurants}), 200
+
         
     except Exception as e:
         conn.rollback()
@@ -1286,5 +1345,35 @@ def record_group_match(code):
     finally:
         cursor.close()
         conn.close()
+@app.route('/match/<username>',methods=['POST'])
+def complete_match(username):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        data = request.get_json()
+        restaurant_id = data['restaurant_id']
+
+        cursor.execute("INSERT INTO user_history (username, restaurant_id) VALUES (%s, %s)",username, restaurant_id)
+
+        cursor.execute('''SELECT place_vector, food_vector FROM restaurant WHERE restaurant_id 
+                        IN (SELECT restaurant_id FROM user_history WHERE user = %s)''',(username,))
+        
+        zipped = zip(*cursor.fetchall())
+        place_vector = zipped[0]
+        food_vector = zipped[1]
+        place_vector = vect.average_embbeddings(place_vector)
+        food_vector = vect.average_embbeddings(food_vector)
+        cursor.execute("UPDATE user SET history_place_vector = %s, history_food_vector = %s, history = history + 1",(place_vector,food_vector,))
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
