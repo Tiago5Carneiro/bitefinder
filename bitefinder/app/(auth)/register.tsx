@@ -14,11 +14,19 @@ import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 import { useAuth } from "@/contexts/AuthContext";
 
-// Food preference options
-const AMBIANCE_OPTIONS = ["Rustic", "Modern"];
-const PRICE_OPTIONS = ["Budget-friendly", "Upscale"];
+// place preference
+const AMBIANCE_OPTIONS = ["Rustic", "Modern", "Futuristic", "Minimalistic", "Nature", "Indoor", "Outdoor"];
+const COLOR_OPTIONS = ["Warm", "Cool", "Neutral", "Vibrant", "Dark", "Light", "Colorful"];
+const PRICE_OPTIONS = ["Budget-friendly", "Mid-Range","Upscale"];
 const CROWD_OPTIONS = ["Quiet", "Lively"];
-const CUISINE_OPTIONS = ["Traditional", "Gourmet", "Cousy"];
+const CUISINE_OPTIONS = ["Traditional", "Gourmet", "Cousy", "Exotic", "Fusion", "Street Food", "Fast Food", "Healthy", "Vegetarian", "Vegan"];
+
+// food preference
+const FLAVOR_OPTIONS = ["Sweet", "Savory", "Spicy", "Sour", "Umami", "Bitter", "Smoky", "Tangy", "Herbal"];
+const TEXTURE_OPTIONS = ["Crispy", "Creamy", "Crunchy", "Tender", "Juicy", "Chewy", "Flaky", "Silky", "Soft"];
+const PRESENTATION_OPTIONS = ["Plated", "Buffet", "Bento", "Bowl", "Tasting Menu", "Handheld"];
+const MEAL_OPTIONS = ["Breakfast", "Brunch", "Lunch", "Dinner", "Late Night", "Snacks", "Dessert"];
+const INGREDIENT_OPTIONS = ["Organic", "Local", "Seasonal", "Farm-to-Table", "Foraged", "Sustainable", "Seafood-Based", "Plant-Based"];
 
 export default function RegisterScreen() {
   const [username, setUsername] = useState("");
@@ -29,11 +37,19 @@ export default function RegisterScreen() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Food preferences
+  // place preferences
   const [ambiancePreference, setAmbiancePreference] = useState("");
+  const [colorPreference, setColorPreference] = useState("");
   const [pricePreference, setPricePreference] = useState("");
   const [crowdPreference, setCrowdPreference] = useState("");
   const [cuisinePreference, setCuisinePreference] = useState("");
+
+  // food preferences
+  const [flavourPreference, setflavourPreference] = useState("");
+  const [texturePreference, setTexturePreference] = useState("");
+  const [presentationPreference, setPresentationPreference] = useState("");
+  const [mealPreference, setMealPreference] = useState("");
+  const [ingredientPreference, setIngredientPreference] = useState("");
   
   const { signUp } = useAuth();
 
@@ -58,13 +74,21 @@ export default function RegisterScreen() {
     setIsSubmitting(true);
 
     try {
-      // Include food preferences in user registration
-      await signUp(username, name, email, password, {
-        ambiancePreference,
-        pricePreference,
-        crowdPreference,
-        cuisinePreference,
-      });
+      const place_preferences = [];
+      const food_preferences = [];
+      if (ambiancePreference) place_preferences.push(ambiancePreference);
+      if (colorPreference) place_preferences.push(colorPreference);
+      if (pricePreference) place_preferences.push(pricePreference);
+      if (crowdPreference) place_preferences.push(crowdPreference);
+      if (cuisinePreference) place_preferences.push(cuisinePreference);
+
+      if (flavourPreference) food_preferences.push(flavourPreference);
+      if (texturePreference) food_preferences.push(texturePreference);
+      if (presentationPreference) food_preferences.push(presentationPreference);
+      if (mealPreference) food_preferences.push(mealPreference);
+      if (ingredientPreference) food_preferences.push(ingredientPreference);
+
+      await signUp(username, name, email, password, place_preferences, food_preferences);
     } catch (err: any) {
       setError(err.message || "Registration failed");
     } finally {
@@ -186,7 +210,14 @@ export default function RegisterScreen() {
             setAmbiancePreference,
             "Ambiance"
           )}
-          
+
+          {renderOptions(
+            COLOR_OPTIONS, 
+            colorPreference, 
+            setColorPreference,
+            "Color Scheme"
+          )}
+
           {renderOptions(
             PRICE_OPTIONS, 
             pricePreference, 
@@ -206,6 +237,41 @@ export default function RegisterScreen() {
             cuisinePreference, 
             setCuisinePreference,
             "Cuisine Type"
+          )}
+
+          {renderOptions(
+            FLAVOR_OPTIONS, 
+            flavourPreference, 
+            setflavourPreference,
+            "Flavor Preference"
+          )}
+
+          {renderOptions(
+            TEXTURE_OPTIONS, 
+            texturePreference, 
+            setTexturePreference,
+            "Texture"
+          )}
+
+          {renderOptions(
+            PRESENTATION_OPTIONS, 
+            presentationPreference, 
+            setPresentationPreference,
+            "Presentation"
+          )}
+
+          {renderOptions(
+            MEAL_OPTIONS, 
+            mealPreference, 
+            setMealPreference,
+            "Meal Preference"
+          )}
+
+          {renderOptions(
+            INGREDIENT_OPTIONS, 
+            ingredientPreference, 
+            setIngredientPreference,
+            "Ingredient Preference"
           )}
         </View>
 
