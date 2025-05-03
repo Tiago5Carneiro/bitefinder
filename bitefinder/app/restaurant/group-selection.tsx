@@ -15,80 +15,17 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 
+const API_URL = "http://localhost:5000";
+const WS_URL = "ws://localhost:8765"; // Standalone WebSocket server
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const SWIPE_THRESHOLD = 120;
-
-// Lista de restaurantes simulada
-const MOCK_RESTAURANTS = [
-  {
-    id: "1",
-    name: "Sushi Paradise",
-    image:
-      "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Japanese",
-    rating: 4.5,
-    priceRange: "$$",
-    distance: "0.8 miles",
-    likes: [], // IDs dos usuários que deram like
-  },
-  {
-    id: "2",
-    name: "Burger Joint",
-    image:
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "American",
-    rating: 4.2,
-    priceRange: "$",
-    distance: "1.2 miles",
-    likes: [],
-  },
-  {
-    id: "3",
-    name: "Pasta Palace",
-    image:
-      "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Italian",
-    rating: 4.7,
-    priceRange: "$$$",
-    distance: "2.1 miles",
-    likes: [],
-  },
-  {
-    id: "4",
-    name: "Taco Fiesta",
-    image:
-      "https://images.unsplash.com/photo-1552332386-f8dd00dc2f85?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Mexican",
-    rating: 4.1,
-    priceRange: "$",
-    distance: "0.6 miles",
-    likes: [],
-  },
-  {
-    id: "5",
-    name: "Golden Dragon",
-    image:
-      "https://images.unsplash.com/photo-1563245372-f21724e3856d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
-    cuisine: "Chinese",
-    rating: 4.3,
-    priceRange: "$$",
-    distance: "1.5 miles",
-    likes: [],
-  },
-];
-
-// Simular um grupo de usuários
-const MOCK_GROUP = {
-  id: "grupo123",
-  members: ["user1", "user2", "user3"], // 3 usuários no grupo
-  name: "Lunch Squad",
-};
 
 export default function GroupSelectionScreen() {
   const tintColor = useThemeColor({}, "tint");
@@ -96,6 +33,7 @@ export default function GroupSelectionScreen() {
 
   // Get group data from route params
   const params = useLocalSearchParams();
+  const groupCode = params.groupCode as string;
 
   const [showMatchAnimation, setShowMatchAnimation] = useState(false);
   const matchScaleAnim = useRef(new Animated.Value(0.5)).current;
@@ -105,58 +43,426 @@ export default function GroupSelectionScreen() {
   const [likedRestaurantIds, setLikedRestaurantIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
-
-  const [restaurants, setRestaurants] = useState<
-    {
-      id: string;
-      name: string;
-      image: string;
-      cuisine: string;
-      rating: number;
-      priceRange: string;
-      distance: string;
-      likes: string[];
-    }[]
-  >([]);
-  const [matchedRestaurant, setMatchedRestaurant] = useState<{
-    id: string;
-    name: string;
-    image: string;
-    cuisine: string;
-    rating: number;
-    priceRange: string;
-    distance: string;
-    likes: string[];
-  } | null>(null);
-  const [currentUserId, setCurrentUserId] = useState("user1"); // Usuário atual simulado
-  const [group, setGroup] = useState(MOCK_GROUP);
+  const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [matchedRestaurant, setMatchedRestaurant] = useState<any | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [group, setGroup] = useState<any>(null);
   const [position] = useState(new Animated.ValueXY());
+  const [localMatches, setLocalMatches] = useState<string[]>([]);
 
-  // Add logging to debug
-  useEffect(() => {
-    console.log("Received params:", params);
-    if (params.group) {
-      try {
-        const parsedGroup = JSON.parse(params.group as string);
-        console.log("Parsed group data:", parsedGroup);
-        // Update group state with the parsed data
-        setGroup(parsedGroup);
-      } catch (error) {
-        console.error("Error parsing group data:", error);
-      }
-    }
-  }, [params]);
+  // WebSocket reference
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Configurar dados iniciais
-  useEffect(() => {
-    // Simular carregamento de dados
+  // Toast notification state
+  const [toast, setToast] = useState({
+    visible: false,
+    message: "",
+    type: "info",
+  });
+
+  // Show toast notification
+  const showToast = (
+    message: string,
+    type: "info" | "error" = "info",
+    duration = 3000
+  ) => {
+    setToast({
+      visible: true,
+      message,
+      type,
+    });
+
     setTimeout(() => {
-      setRestaurants(MOCK_RESTAURANTS);
-      setIsLoading(false);
-    }, 1500);
-  }, []);
+      setToast({ visible: false, message: "", type: "info" });
+    }, duration);
+  };
 
-  // Verificar matches sempre que a lista de restaurantes mudar
+  // Function to check for local match
+  const checkForLocalMatch = (restaurant) => {
+    // If restaurant already marked as match, ignore
+    if (localMatches.includes(restaurant.id)) {
+      return false;
+    }
+
+    if (!group || !group.members) {
+      return false;
+    }
+
+    // Count members in group
+    const membersCount = group.members.length;
+
+    // If all members liked (including current like)
+    if (restaurant.likes.length === membersCount && membersCount >= 2) {
+      console.log(
+        `LOCAL MATCH FOUND for ${restaurant.name}!`,
+        restaurant.likes
+      );
+      return true;
+    }
+
+    return false;
+  };
+
+  // Send message via WebSocket
+  const sendWsMessage = (type: string, data: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify({
+        type,
+        data,
+      });
+      wsRef.current.send(message);
+    } else {
+      console.warn("WebSocket not connected, message not sent:", type, data);
+    }
+  };
+
+  // Initialize WebSocket connection
+  const initializeWebSocket = (username: string, token: string) => {
+    console.log("Initializing WebSocket for restaurant selection");
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+
+    // Clear any pending reconnect
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    // Create WebSocket connection with auth token
+    const ws = new WebSocket(`${WS_URL}?token=${token}&group=${groupCode}`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log("WebSocket connection established");
+      console.log(`Connected to room: ${groupCode} as ${username}`);
+
+      // No need to explicitly send join_group as the server handles it
+      // based on URL parameters
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        handleWebSocketMessage(message, username);
+      } catch (error) {
+        console.error("Error parsing WebSocket message:", error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = (event) => {
+      console.log("WebSocket connection closed:", event.code, event.reason);
+
+      // Attempt to reconnect after delay unless it was intentional
+      if (event.code !== 1000) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log("Attempting to reconnect WebSocket...");
+          initializeWebSocket(username, token);
+        }, 3000);
+      }
+    };
+  };
+
+  // Handle incoming WebSocket messages
+  const handleWebSocketMessage = (message: any, username: string) => {
+    const { type, data } = message;
+
+    switch (type) {
+      case "selection_reset":
+        console.log("Selection reset by server");
+
+        // Create a fresh copy of restaurants with empty likes
+        const resetRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+          ...restaurant,
+          likes: [],
+        }));
+
+        // Reset all states
+        setRestaurants(resetRestaurants);
+        setLikedRestaurantIds([]);
+        setLocalMatches([]);
+        resetMatchAnimation();
+        setMatchedRestaurant(null);
+        break;
+      case "restaurant_match":
+        console.log("Received restaurant match from server:", data);
+
+        // If already showing a match, ignore this event
+        if (matchedRestaurant) {
+          console.log("Already showing a match, ignoring server match event");
+          return;
+        }
+
+        // Check if already displaying this match locally
+        if (localMatches.includes(data.restaurant_id)) {
+          console.log("Match already detected locally, ignoring server event");
+          return;
+        }
+
+        if (data && data.restaurant_id) {
+          // Find restaurant in our list
+          let matched = restaurants.find((r) => r.id === data.restaurant_id);
+
+          // If not found in current list, look in original restaurants
+          if (!matched) {
+            matched = MOCK_RESTAURANTS.find((r) => r.id === data.restaurant_id);
+          }
+
+          if (matched) {
+            // Register match to avoid duplication
+            setLocalMatches((prev) => [...prev, data.restaurant_id]);
+
+            // Trigger match animation
+            setShowMatchAnimation(true);
+
+            // Set matched restaurant after delay
+            setTimeout(() => {
+              setMatchedRestaurant(matched);
+
+              // Start animations
+              Animated.parallel([
+                Animated.timing(matchScaleAnim, {
+                  toValue: 1,
+                  duration: 600,
+                  easing: Easing.elastic(1.2),
+                  useNativeDriver: true,
+                }),
+                Animated.timing(matchOpacityAnim, {
+                  toValue: 1,
+                  duration: 400,
+                  useNativeDriver: true,
+                }),
+                Animated.sequence([
+                  Animated.delay(300),
+                  Animated.timing(confettiOpacity, {
+                    toValue: 1,
+                    duration: 500,
+                    useNativeDriver: true,
+                  }),
+                ]),
+              ]).start();
+            }, 800);
+          } else {
+            console.log(
+              "Could not find matched restaurant in local state:",
+              data.restaurant_id
+            );
+          }
+        }
+        break;
+      case "restaurant_vote":
+        console.log("Received restaurant vote:", data);
+
+        if (data && data.restaurant_id && data.username) {
+          // Skip processing our own votes (they're already applied)
+          if (data.username === username) return;
+
+          // Update restaurant likes based on the vote
+          setRestaurants((prevRestaurants) => {
+            const updatedRestaurants = [...prevRestaurants];
+            const restaurantIndex = updatedRestaurants.findIndex(
+              (r) => r.id === data.restaurant_id
+            );
+
+            if (restaurantIndex >= 0) {
+              const restaurant = updatedRestaurants[restaurantIndex];
+              const updatedRestaurant = { ...restaurant };
+
+              if (data.liked) {
+                if (!updatedRestaurant.likes.includes(data.username)) {
+                  updatedRestaurant.likes = [
+                    ...updatedRestaurant.likes,
+                    data.username,
+                  ];
+                }
+              } else {
+                updatedRestaurant.likes = updatedRestaurant.likes.filter(
+                  (name) => name !== data.username
+                );
+              }
+
+              updatedRestaurants[restaurantIndex] = updatedRestaurant;
+
+              // Check for match immediately if all members liked
+              if (
+                group &&
+                group.members &&
+                updatedRestaurant.likes.length === group.members.length &&
+                updatedRestaurant.likes.length >= 2
+              ) {
+                console.log(`MATCH DETECTED FOR ${data.restaurant_name}!`);
+
+                if (!localMatches.includes(data.restaurant_id)) {
+                  // Register match locally
+                  setLocalMatches((prev) => [...prev, data.restaurant_id]);
+
+                  // Set the matched restaurant
+                  setMatchedRestaurant(updatedRestaurant);
+                  setShowMatchAnimation(true);
+
+                  // Start animations
+                  Animated.parallel([
+                    Animated.timing(matchScaleAnim, {
+                      toValue: 1,
+                      duration: 600,
+                      easing: Easing.elastic(1.2),
+                      useNativeDriver: true,
+                    }),
+                    Animated.timing(matchOpacityAnim, {
+                      toValue: 1,
+                      duration: 400,
+                      useNativeDriver: true,
+                    }),
+                    Animated.sequence([
+                      Animated.delay(300),
+                      Animated.timing(confettiOpacity, {
+                        toValue: 1,
+                        duration: 500,
+                        useNativeDriver: true,
+                      }),
+                    ]),
+                  ]).start();
+                }
+              }
+            }
+
+            return updatedRestaurants;
+          });
+        }
+        break;
+      case "group_dissolved":
+        console.log("Received group_dissolved event:", data);
+
+        showToast(
+          data.message || "The group has been dissolved by the host",
+          "error"
+        );
+
+        // Delay navigation to allow toast to be seen
+        setTimeout(() => {
+          router.replace("/(tabs)");
+        }, 1500);
+        break;
+
+      case "member_left":
+        if (data && data.username) {
+          // Show toast about member leaving
+          showToast(`${data.name || data.username} has left the group`, "info");
+        }
+        break;
+
+      default:
+        console.log("Unhandled WebSocket message type:", type, data);
+    }
+  };
+
+  // Load user data, group info, and restaurants when component mounts
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+
+        // Get user data
+        const userData = await AsyncStorage.getItem("userData");
+        const userToken = await AsyncStorage.getItem("userToken");
+
+        if (!userData || !userToken) {
+          showToast("Please login first to continue", "error");
+          router.replace("/(auth)/login");
+          return;
+        }
+
+        const user = JSON.parse(userData);
+        setCurrentUser(user);
+
+        // Get group information
+        const groupResponse = await fetch(`${API_URL}/groups/${groupCode}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+          },
+        });
+
+        if (!groupResponse.ok) {
+          const errorData = await groupResponse.json();
+          showToast(
+            errorData.error || "Failed to get group information",
+            "error"
+          );
+          router.back();
+          return;
+        }
+
+        const groupData = await groupResponse.json();
+
+        // Also get group members with a second call
+        const membersResponse = await fetch(
+          `${API_URL}/groups/${groupCode}/members`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${userToken}`,
+            },
+          }
+        );
+
+        let membersList = [];
+        if (membersResponse.ok) {
+          const membersData = await membersResponse.json();
+          membersList = membersData.members || [];
+        }
+
+        // Add members to group object
+        const groupWithMembers = {
+          ...groupData.group,
+          members: membersList,
+        };
+
+        setGroup(groupWithMembers);
+
+        // For demo using mock data
+        setTimeout(() => {
+          setRestaurants(MOCK_RESTAURANTS);
+          setIsLoading(false);
+        }, 1500);
+
+        // Initialize WebSocket connection
+        initializeWebSocket(user.username, userToken);
+      } catch (error) {
+        console.error("Error loading data:", error);
+        showToast("Failed to load selection data. Please try again.", "error");
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+
+    // Clean up WebSocket connection when component unmounts
+    return () => {
+      if (wsRef.current) {
+        // Send leave message before closing
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          sendWsMessage("leave_group", { group_code: groupCode });
+
+          // Close connection gracefully
+          wsRef.current.close(1000, "User left the screen");
+        }
+      }
+
+      // Clear any reconnection attempts
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [groupCode]);
+
+  // Check for matches whenever restaurant list changes
   useEffect(() => {
     checkForMatches();
   }, [restaurants]);
@@ -169,18 +475,42 @@ export default function GroupSelectionScreen() {
     }
   };
 
-  // Verificar se algum restaurante tem likes de todos os membros do grupo
+  // Melhorar a função checkForMatches para ser mais robusta
   const checkForMatches = () => {
+    if (!group || !restaurants.length) return;
+
+    // Melhorar logs para depuração
+    console.log("Checking for matches with group members:", group.members);
+    console.log("Current user:", currentUser?.username);
+
+    const membersCount = group.members?.length || 0;
+    console.log(`Total members count: ${membersCount}`);
+
+    if (membersCount < 2) {
+      console.log("Need at least 2 members for a match");
+      return; // Precisamos de pelo menos 2 membros para um match
+    }
+
     for (const restaurant of restaurants) {
-      if (restaurant.likes.length === group.members.length) {
-        // Instead of immediately setting matchedRestaurant, trigger animation sequence
+      console.log(
+        `Restaurant ${restaurant.name} has ${restaurant.likes.length} likes:`,
+        restaurant.likes
+      );
+
+      // Verificar se todos os membros ativos deram like
+      if (
+        restaurant.likes.length >= 2 &&
+        restaurant.likes.length === membersCount
+      ) {
+        console.log(`🎯 MATCH FOUND for ${restaurant.name}!`);
+
+        // Resto do código para exibir o match...
         setShowMatchAnimation(true);
 
-        // Set the matched restaurant after a slight delay
         setTimeout(() => {
           setMatchedRestaurant(restaurant);
 
-          // Start animations
+          // Animar...
           Animated.parallel([
             Animated.timing(matchScaleAnim, {
               toValue: 1,
@@ -202,6 +532,22 @@ export default function GroupSelectionScreen() {
               }),
             ]),
           ]).start();
+
+          // Notificar o servidor sobre o match
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "restaurant_match",
+                data: {
+                  group_code: groupCode,
+                  restaurant_id: restaurant.id,
+                  restaurant_name: restaurant.name,
+                  username: currentUser?.username,
+                  name: currentUser?.name || currentUser?.username,
+                },
+              })
+            );
+          }
         }, 800);
 
         return;
@@ -209,73 +555,14 @@ export default function GroupSelectionScreen() {
     }
   };
 
-  interface Restaurant {
-    id: string;
-    name: string;
-    image: string;
-    cuisine: string;
-    rating: number;
-    priceRange: string;
-    distance: string;
-    likes: string[];
-  }
-
-  const processGroupVotesForRestaurant = (restaurant: Restaurant): void => {
-    // Create a copy of the restaurant to work with
-    const restaurantWithVotes: Restaurant = { ...restaurant };
-    const currentLikes: string[] = [...restaurantWithVotes.likes];
-
-    // For each group member (except current user), simulate vote
-    group.members.forEach((memberId: string) => {
-      if (memberId !== currentUserId) {
-        // 60% chance to like
-        if (Math.random() < 0.6 && !currentLikes.includes(memberId)) {
-          currentLikes.push(memberId);
-          console.log(`User ${memberId} liked restaurant ${restaurant.id}`);
-        }
-      }
-    });
-
-    // Update the restaurant with new likes
-    restaurantWithVotes.likes = currentLikes;
-
-    // Check if all group members liked this restaurant
-    // Check if all group members liked this restaurant
-    if (currentLikes.length === group.members.length) {
-      console.log("Match found! All group members liked the restaurant!");
-
-      // Trigger the animation sequence
-      setShowMatchAnimation(true);
-
-      // Set matched restaurant after delay
-      setTimeout(() => {
-        setMatchedRestaurant(restaurantWithVotes);
-
-        // Start animations
-        Animated.parallel([
-          Animated.timing(matchScaleAnim, {
-            toValue: 1,
-            duration: 600,
-            easing: Easing.elastic(1.2),
-            useNativeDriver: true,
-          }),
-          Animated.timing(matchOpacityAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.sequence([
-            Animated.delay(300),
-            Animated.timing(confettiOpacity, {
-              toValue: 1,
-              duration: 500,
-              useNativeDriver: true,
-            }),
-          ]),
-        ]).start();
-      }, 800);
-    }
+  // Reset animation values when exiting match screen
+  const resetMatchAnimation = () => {
+    matchScaleAnim.setValue(0.5);
+    matchOpacityAnim.setValue(0);
+    confettiOpacity.setValue(0);
+    setShowMatchAnimation(false);
   };
+
   // Configuração do PanResponder para os gestos de swipe
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -293,14 +580,6 @@ export default function GroupSelectionScreen() {
     },
   });
 
-  // Reset animation values when exiting match screen
-  const resetMatchAnimation = () => {
-    matchScaleAnim.setValue(0.5);
-    matchOpacityAnim.setValue(0);
-    confettiOpacity.setValue(0);
-    setShowMatchAnimation(false);
-  };
-
   const resetPosition = () => {
     Animated.spring(position, {
       toValue: { x: 0, y: 0 },
@@ -310,6 +589,27 @@ export default function GroupSelectionScreen() {
   };
 
   const swipeLeft = () => {
+    if (restaurants.length === 0) return;
+
+    const currentRestaurant = restaurants[0];
+
+    // Emit vote to websocket
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "restaurant_vote",
+          data: {
+            group_code: groupCode,
+            restaurant_id: currentRestaurant.id,
+            restaurant_name: currentRestaurant.name,
+            username: currentUser?.username,
+            name: currentUser?.name || currentUser?.username,
+            liked: false,
+          },
+        })
+      );
+    }
+
     Animated.timing(position, {
       toValue: { x: -SCREEN_WIDTH - 100, y: 0 },
       duration: 250,
@@ -318,26 +618,83 @@ export default function GroupSelectionScreen() {
   };
 
   const swipeRight = () => {
-    if (restaurants.length === 0) {
-      return;
-    }
+    if (restaurants.length === 0) return;
 
     const currentRestaurant = restaurants[0];
-    console.log(
-      `User ${currentUserId} is liking restaurant ${currentRestaurant.id}`
-    );
 
     // Add the current restaurant to liked restaurants with current user's like
-    const updatedRestaurant = {
-      ...currentRestaurant,
-      likes: [...currentRestaurant.likes, currentUserId],
-    };
+    if (currentUser) {
+      // Store this restaurant in a tracking array
+      setLikedRestaurantIds((prev) => [...prev, currentRestaurant.id]);
 
-    // Store this restaurant in a tracking array
-    setLikedRestaurantIds((prev) => [...prev, currentRestaurant.id]);
+      // Importante: clone o restaurante atual para evitar problemas com animações
+      const updatedRestaurant = {
+        ...currentRestaurant,
+        likes: [...currentRestaurant.likes, currentUser.username],
+      };
 
-    // Process votes from group members for this restaurant
-    processGroupVotesForRestaurant(updatedRestaurant);
+      // Atualizar localmente o restaurante com o like do usuário atual
+      setRestaurants((prevRestaurants) => {
+        const updatedRestaurants = [...prevRestaurants];
+        updatedRestaurants[0] = updatedRestaurant;
+        return updatedRestaurants;
+      });
+
+      // Verificação rápida de match localmente
+      const localMatch = checkForLocalMatch(updatedRestaurant);
+
+      // Se for um match, exibir imediatamente
+      if (localMatch) {
+        // Registrar o match localmente para evitar duplicação
+        setLocalMatches((prev) => [...prev, updatedRestaurant.id]);
+
+        // Mostrar animação de match
+        setTimeout(() => {
+          setMatchedRestaurant(updatedRestaurant);
+          setShowMatchAnimation(true);
+
+          // Iniciar animações
+          Animated.parallel([
+            Animated.timing(matchScaleAnim, {
+              toValue: 1,
+              duration: 600,
+              easing: Easing.elastic(1.2),
+              useNativeDriver: true,
+            }),
+            Animated.timing(matchOpacityAnim, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.sequence([
+              Animated.delay(300),
+              Animated.timing(confettiOpacity, {
+                toValue: 1,
+                duration: 500,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]).start();
+        }, 300);
+      }
+
+      // Send vote to server via socket
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "restaurant_vote",
+            data: {
+              group_code: groupCode,
+              restaurant_id: currentRestaurant.id,
+              restaurant_name: currentRestaurant.name,
+              username: currentUser?.username,
+              name: currentUser?.name || currentUser?.username,
+              liked: true,
+            },
+          })
+        );
+      }
+    }
 
     // Animate the card away
     Animated.timing(position, {
@@ -345,74 +702,6 @@ export default function GroupSelectionScreen() {
       duration: 250,
       useNativeDriver: false,
     }).start(() => nextCard());
-  };
-
-  // Simular votos de outros usuários no lugar, sem usar setState
-  const simulateOtherUsersVotesInPlace = (
-    restaurants: {
-      id: string;
-      name: string;
-      image: string;
-      cuisine: string;
-      rating: number;
-      priceRange: string;
-      distance: string;
-      likes: string[];
-    }[],
-    targetIndex: number
-  ) => {
-    // Se não existir restaurantes ou o índice for inválido, não faz nada
-    if (!restaurants || !restaurants[targetIndex]) {
-      console.log("Invalid restaurants or target index");
-      return;
-    }
-
-    const targetRestaurant = restaurants[targetIndex];
-    console.log(
-      `Simulating votes for restaurant ${targetRestaurant.id} in-place`
-    );
-
-    // Clonar o restaurante e seus likes para modificação
-    const updatedRestaurant = { ...targetRestaurant };
-    const updatedLikes = [...(updatedRestaurant.likes || [])];
-
-    console.log("Current likes before simulation:", updatedLikes);
-
-    // Para cada membro do grupo (exceto o usuário atual)
-    group.members.forEach((memberId) => {
-      // Não simular para o usuário atual
-      if (memberId !== currentUserId) {
-        // Aumentando a probabilidade para 80% para garantir mais matches
-        if (Math.random() < 0.3) {
-          console.log(
-            `User ${memberId} liked restaurant ${targetRestaurant.id}`
-          );
-
-          // Se este membro ainda não deu like
-          if (!updatedLikes.includes(memberId)) {
-            console.log(`Adding like for user ${memberId}`);
-            updatedLikes.push(memberId);
-          }
-        }
-      }
-    });
-
-    console.log("Updated likes after simulation:", updatedLikes);
-
-    // Atualizar o restaurante com os novos likes
-    updatedRestaurant.likes = updatedLikes;
-    restaurants[targetIndex] = updatedRestaurant;
-
-    // Verificar se temos um match após a simulação
-    if (updatedLikes.length === group.members.length) {
-      console.log("MATCH FOUND in simulation!");
-
-      // Atualizar o state com o match
-      setMatchedRestaurant(updatedRestaurant);
-    }
-
-    // Atualizar o state com os novos likes
-    setRestaurants([...restaurants]);
   };
 
   const nextCard = () => {
@@ -445,6 +734,65 @@ export default function GroupSelectionScreen() {
     outputRange: [1, 0],
     extrapolate: "clamp",
   });
+
+  // Lista de restaurantes simulada - normalmente seria buscada da API
+  const MOCK_RESTAURANTS = [
+    {
+      id: "1",
+      name: "Sushi Paradise",
+      image:
+        "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Japanese",
+      rating: 4.5,
+      priceRange: "$$",
+      distance: "0.8 miles",
+      likes: [],
+    },
+    {
+      id: "2",
+      name: "Burger Joint",
+      image:
+        "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "American",
+      rating: 4.2,
+      priceRange: "$",
+      distance: "1.2 miles",
+      likes: [],
+    },
+    {
+      id: "3",
+      name: "Pasta Palace",
+      image:
+        "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Italian",
+      rating: 4.7,
+      priceRange: "$$$",
+      distance: "2.1 miles",
+      likes: [],
+    },
+    {
+      id: "4",
+      name: "Taco Fiesta",
+      image:
+        "https://images.unsplash.com/photo-1552332386-f8dd00dc2f85?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Mexican",
+      rating: 4.1,
+      priceRange: "$",
+      distance: "0.6 miles",
+      likes: [],
+    },
+    {
+      id: "5",
+      name: "Golden Dragon",
+      image:
+        "https://images.unsplash.com/photo-1563245372-f21724e3856d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Chinese",
+      rating: 4.3,
+      priceRange: "$$",
+      distance: "1.5 miles",
+      likes: [],
+    },
+  ];
 
   const shareGroupCode = () => {
     Alert.alert(
@@ -577,30 +925,42 @@ export default function GroupSelectionScreen() {
             </ThemedView>
 
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: tintColor }]}
-              onPress={() =>
-                Alert.alert(
-                  "Restaurant Details",
-                  "View restaurant details here."
-                )
-              }
-            >
-              <ThemedText style={styles.buttonText}>View Details</ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
+              style={[
+                styles.button,
+                { backgroundColor: tintColor, marginTop: 30 },
+              ]}
               onPress={() => {
-                resetMatchAnimation();
-                setMatchedRestaurant(null);
-                setRestaurants(MOCK_RESTAURANTS);
+                // Clear liked restaurant IDs
+                setLikedRestaurantIds([]);
+
+                // Clear local matches tracking
+                setLocalMatches([]);
+
+                // Create a fresh copy of the mock restaurants with empty likes arrays
+                const freshRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+                  ...restaurant,
+                  likes: [],
+                }));
+
+                // Set the fresh restaurants
+                setRestaurants(freshRestaurants);
+
+                // Tell the server to reset the selection for this group
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(
+                    JSON.stringify({
+                      type: "reset_selection",
+                      data: {
+                        group_code: groupCode,
+                        username: currentUser?.username,
+                        name: currentUser?.name || currentUser?.username,
+                      },
+                    })
+                  );
+                }
               }}
             >
-              <ThemedText
-                style={[styles.secondaryButtonText, { color: textColor }]}
-              >
-                Start New Selection
-              </ThemedText>
+              <ThemedText style={styles.buttonText}>Start Over</ThemedText>
             </TouchableOpacity>
           </Animated.View>
         </ThemedView>
@@ -656,7 +1016,22 @@ export default function GroupSelectionScreen() {
 
         <TouchableOpacity
           style={[styles.button, { backgroundColor: tintColor, marginTop: 30 }]}
-          onPress={() => setRestaurants(MOCK_RESTAURANTS)}
+          onPress={() => {
+            // Clear liked restaurant IDs
+            setLikedRestaurantIds([]);
+
+            // Clear local matches tracking
+            setLocalMatches([]);
+
+            // Create a fresh copy of the mock restaurants with empty likes arrays
+            const freshRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+              ...restaurant,
+              likes: [],
+            }));
+
+            // Set the fresh restaurants
+            setRestaurants(freshRestaurants);
+          }}
         >
           <ThemedText style={styles.buttonText}>Start Over</ThemedText>
         </TouchableOpacity>
@@ -667,6 +1042,24 @@ export default function GroupSelectionScreen() {
   return (
     <ThemedView style={styles.container}>
       <StatusBar barStyle="light-content" />
+
+      {/* Toast notification */}
+      {toast.visible && (
+        <View
+          style={[
+            styles.toastContainer,
+            { backgroundColor: toast.type === "error" ? "#FF6B6B" : "#4ECDC4" },
+          ]}
+        >
+          <Ionicons
+            name={toast.type === "error" ? "alert-circle" : "checkmark-circle"}
+            size={24}
+            color="white"
+            style={{ marginRight: 8 }}
+          />
+          <ThemedText style={styles.toastMessage}>{toast.message}</ThemedText>
+        </View>
+      )}
       <ThemedView style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -687,7 +1080,7 @@ export default function GroupSelectionScreen() {
               style={{ marginRight: 6 }}
             />
             <ThemedText style={styles.groupInfoText}>
-              {group.name} • {group.members.length} people
+              {group.name} • {group.members?.length || 0} people
             </ThemedText>
           </ThemedView>
         </ThemedView>
@@ -819,8 +1212,14 @@ export default function GroupSelectionScreen() {
                       </ThemedView>
                     </ThemedView>
 
+                    {/* Keep the likes container but make it invisible */}
                     {restaurant.likes.length > 0 && (
-                      <ThemedView style={styles.likesContainer}>
+                      <ThemedView
+                        style={[
+                          styles.likesContainer,
+                          { opacity: 0, height: 0, overflow: "hidden" },
+                        ]}
+                      >
                         <ThemedView style={styles.likesRow}>
                           <Ionicons
                             name="heart"
@@ -829,8 +1228,8 @@ export default function GroupSelectionScreen() {
                             style={{ marginRight: 6 }}
                           />
                           <ThemedText style={styles.likesText}>
-                            {restaurant.likes.length}/{group.members.length}{" "}
-                            group votes
+                            {restaurant.likes.length}/
+                            {group.members?.length || 0} group votes
                           </ThemedText>
                         </ThemedView>
                         <ThemedView style={styles.progressMiniBar}>
@@ -840,7 +1239,7 @@ export default function GroupSelectionScreen() {
                               {
                                 width: `${
                                   (restaurant.likes.length /
-                                    group.members.length) *
+                                    (group.members?.length || 1)) *
                                   100
                                 }%`,
                                 backgroundColor: "#FF6B6B",
@@ -1461,5 +1860,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.7,
     textAlign: "center",
+  },
+  toastContainer: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
+    zIndex: 100,
+    opacity: 0.95,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toastMessage: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
+    fontSize: 16,
   },
 });
