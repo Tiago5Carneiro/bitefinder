@@ -8,8 +8,12 @@ import jwt
 import datetime
 import random
 import string
+import sys
+import json
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
+sys.path.insert(0,"../src/vectorization/vectorization")
+import vectorization as vect
 
 # Load environment variables
 load_dotenv()
@@ -550,6 +554,46 @@ def get_restaurants():
         cursor.close()
         conn.close()
 
+
+# RESTAURANT FOR USER ENDPOINTS
+@app.route('/restaurants/<username>', methods=['GET'])
+def get_restaurants_preference(username):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT preference FROM user_preference WHERE user = %s",(username,))
+        result = cursor.fetchall()
+        
+        pref_list = []
+
+        for r in result:
+            pref_list.append(r[0])
+
+        vec = vect.create_embeddings_from_preferences(str(pref_list))
+        
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(vec),))
+
+        cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+
+        restaurants = cursor.fetchall()
+
+        # Get images for each restaurant
+        for restaurant in restaurants:
+            restaurant_id = restaurant['restaurant_id']  # Changed from 'id' to 'restaurant_id'
+            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
+            images = cursor.fetchall()
+            restaurant['images'] = [img['image_url'] for img in images]
+            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
+        
+        return jsonify({'restaurants': restaurants}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.route('/users', methods=['GET'])
 def get_users():
