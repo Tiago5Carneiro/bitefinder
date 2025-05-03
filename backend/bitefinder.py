@@ -12,12 +12,9 @@ import sys
 import json
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
-<<<<<<< HEAD
-=======
 sys.path.insert(0,"src/vectorization/")
 import vectorization as vect
 
->>>>>>> main
 # Load environment variables
 load_dotenv()
 
@@ -1040,7 +1037,6 @@ def start_restaurant_selection(code):
         cursor.close()
         conn.close()
 
-<<<<<<< HEAD
 # Endpoint to add user preferences
 @app.route('/user/<username>/preferences', methods=['GET'])
 def get_user_preferences(username):
@@ -1081,7 +1077,6 @@ def update_user_preferences(username):
     if not isinstance(preferences, list):
         return jsonify({'error': 'Preferences must be a list'}), 400
     
-=======
 
 @socketio.on('restaurant_vote')
 def handle_restaurant_vote(data):
@@ -1100,26 +1095,10 @@ def handle_restaurant_vote(data):
     emit('restaurant_vote', data, room=room)
     
     # Store vote in database
->>>>>>> main
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-<<<<<<< HEAD
-        # Validate user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Delete existing preferences
-        cursor.execute("DELETE FROM user_preference WHERE username = %s", (username,))
-        
-        # Insert new preferences
-        for preference in preferences:
-            cursor.execute(
-                "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
-                (username, preference)
-=======
         if liked:
             # Store like in database (handle duplicates)
             cursor.execute(
@@ -1131,31 +1110,20 @@ def handle_restaurant_vote(data):
             cursor.execute(
                 "DELETE FROM user_restaurant WHERE username = %s AND restaurant_id = %s",
                 (username, restaurant_id)
->>>>>>> main
             )
         
         conn.commit()
         
-<<<<<<< HEAD
-        return jsonify({'message': 'Preferences updated successfully'}), 200
-    
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-=======
         # Check if this vote created a match
         check_for_restaurant_match(room, restaurant_id)
         
     except Exception as e:
         print(f"Error handling restaurant vote: {e}")
         conn.rollback()
->>>>>>> main
     finally:
         cursor.close()
         conn.close()
 
-<<<<<<< HEAD
 # Endpoint to update user profile
 @app.route('/user/<username>/profile', methods=['POST'])
 def update_user_profile(username):
@@ -1164,7 +1132,6 @@ def update_user_profile(username):
     # Check for required fields
     if not data or not any(k in data for k in ('name', 'email')):
         return jsonify({'error': 'No profile data provided'}), 400
-=======
 def check_for_restaurant_match(group_code, restaurant_id):
     """Check if all group members liked the same restaurant"""
     conn = get_db_connection()
@@ -1290,53 +1257,11 @@ def record_group_match(code):
         return jsonify({'error': 'Missing restaurant_id'}), 400
         
     restaurant_id = data['restaurant_id']
->>>>>>> main
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-<<<<<<< HEAD
-        # Validate user exists
-        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
-        if not cursor.fetchone():
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Build update query dynamically based on provided fields
-        update_fields = []
-        update_values = []
-        
-        if 'name' in data and data['name']:
-            update_fields.append("name = %s")
-            update_values.append(data['name'])
-            
-        if 'email' in data and data['email']:
-            update_fields.append("email = %s")
-            update_values.append(data['email'])
-        
-        if not update_fields:
-            return jsonify({'error': 'No valid fields to update'}), 400
-        
-        # Add username to values for WHERE clause
-        update_values.append(username)
-        
-        # Execute update
-        query = f"UPDATE user SET {', '.join(update_fields)} WHERE username = %s"
-        cursor.execute(query, update_values)
-        
-        conn.commit()
-        
-        return jsonify({'message': 'Profile updated successfully'}), 200
-    
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        conn.close()
-
-=======
         # Check if group exists
         cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
         if not cursor.fetchone():
@@ -1361,6 +1286,5 @@ def record_group_match(code):
     finally:
         cursor.close()
         conn.close()
->>>>>>> main
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
