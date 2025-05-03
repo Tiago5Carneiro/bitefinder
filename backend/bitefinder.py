@@ -8,8 +8,16 @@ import jwt
 import datetime
 import random
 import string
+import sys
+import json
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
+<<<<<<< HEAD
+=======
+sys.path.insert(0,"src/vectorization/")
+import vectorization as vect
+
+>>>>>>> main
 # Load environment variables
 load_dotenv()
 
@@ -133,7 +141,7 @@ def init_db():
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_restaurant (
             username VARCHAR(100),
-            restaurant_id INT,
+            restaurant_id VARCHAR(100),
             PRIMARY KEY (username, restaurant_id)
         )
         ''')
@@ -191,6 +199,53 @@ def handle_leave_group(data):
     room = data['group_code']
     leave_room(room)
     print(f'Client left room: {room}')
+
+# Add this event handler near the other socketio event handlers
+# Update the group_dissolved_by_host handler
+@socketio.on('group_dissolved_by_host')
+def handle_group_dissolved(data):
+    room = data.get('group_code')
+    if room:
+        print(f"Received group_dissolved_by_host for room {room}")
+        
+        # Mark the group as inactive in the database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE `group` SET status = 'inactive' WHERE code = %s",
+                (room,)
+            )
+            conn.commit()
+            print(f"Group {room} marked as inactive in database")
+        except Exception as e:
+            print(f"Error updating group status: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+        
+        # Forward the dissolution event to all clients in the room
+        emit('group_dissolved', {
+            'message': data.get('message', 'The host has dissolved the group'),
+            'redirect': True
+        }, room=room)
+        
+        print(f"Group dissolution event sent to room {room}")
+
+@socketio.on('member_leaving')
+def handle_member_leaving(data):
+    room = data.get('group_code')
+    username = data.get('username')
+    name = data.get('name', username)
+    
+    if room and username:
+        print(f"Member {username} is leaving room {room}")
+        # Enviar para todos os outros membros do grupo
+        emit('member_left', {
+            'username': username,
+            'name': name,
+            'message': f"{name} has left the group"
+        }, room=room)
 
 # Helper functions
 def hash_password(password):
@@ -555,6 +610,46 @@ def get_restaurants():
         conn.close()
 
 
+# RESTAURANT FOR USER ENDPOINTS
+@app.route('/restaurants/<username>', methods=['GET'])
+def get_restaurants_preference(username):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT preference FROM user_preference WHERE user = %s",(username,))
+        result = cursor.fetchall()
+        
+        pref_list = []
+
+        for r in result:
+            pref_list.append(r[0])
+
+        vec = vect.create_embeddings_from_preferences(str(pref_list))
+        
+        cursor.execute("Set @query_vec = (%s):> VECTOR(4096)",(json.dumps(vec),))
+
+        cursor.execute("SELECT *, place_vector <*> @query_vec AS score FROM restaurant ORDER BY score DESC LIMIT 5")
+
+        restaurants = cursor.fetchall()
+
+        # Get images for each restaurant
+        for restaurant in restaurants:
+            restaurant_id = restaurant['restaurant_id']  # Changed from 'id' to 'restaurant_id'
+            cursor.execute("SELECT image_url FROM restaurant_image WHERE restaurant_id = %s", (restaurant_id,))
+            images = cursor.fetchall()
+            restaurant['images'] = [img['image_url'] for img in images]
+            restaurant['rating'] = float(restaurant['rating'])  # Convert Decimal to float for JSON
+        
+        return jsonify({'restaurants': restaurants}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.route('/users', methods=['GET'])
 def get_users():
     conn = get_db_connection()
@@ -747,6 +842,7 @@ def update_ready_status(code):
 @app.route('/groups/<code>/leave', methods=['POST'])
 def leave_group(code):
     data = request.get_json()
+    print(data) 
     
     if 'username' not in data:
         return jsonify({'error': 'Missing username'}), 400
@@ -761,6 +857,8 @@ def leave_group(code):
         # Check if the group exists
         cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
         group = cursor.fetchone()
+
+        print(group)  # Debugging line
         
         if not group:
             return jsonify({'error': 'Group not found'}), 404
@@ -771,7 +869,11 @@ def leave_group(code):
             (code, username)
         )
         
-        if not cursor.fetchone():
+        # CORREÇÃO: Armazene o resultado em uma variável em vez de usar fetchone() duas vezes
+        user_in_group = cursor.fetchone()
+        print(user_in_group)  # Debugging line
+        
+        if not user_in_group:
             return jsonify({'error': 'User not in group'}), 404
             
         # Check if user is the host/creator
@@ -783,13 +885,16 @@ def leave_group(code):
                 "UPDATE `group` SET status = 'inactive' WHERE code = %s",
                 (code,)
             )
+
+            print("Group status updated to inactive")  # Debugging line
             
             # Notify all clients in the group to redirect to home
             socketio.emit('group_dissolved', {
-                'message': 'The host has dissolved the group'
+                'message': 'The host has dissolved the group',
+                'redirect': True
             }, room=code)
+            print("Group dissolved notification sent")  # Debugging line
             
-            # Don't call leave_room here - it's an HTTP request
         else:
             # Get user details for notification
             cursor.execute("SELECT name FROM user WHERE username = %s", (username,))
@@ -808,8 +913,6 @@ def leave_group(code):
                 'name': user_name,
                 'message': f"{user_name} has left the group"
             }, room=code)
-            
-            # Don't call leave_room here - it's an HTTP request
             
             # Get updated member list
             cursor.execute("""
@@ -921,6 +1024,12 @@ def start_restaurant_selection(code):
         
         conn.commit()
         
+        # Emitir evento para todos os membros do grupo
+        socketio.emit('selection_started', {
+            'group_code': code,
+            'message': 'The host has started restaurant selection'
+        }, room=code)
+        
         return jsonify({'message': 'Restaurant selection started'}), 200
         
     except Exception as e:
@@ -931,6 +1040,7 @@ def start_restaurant_selection(code):
         cursor.close()
         conn.close()
 
+<<<<<<< HEAD
 # Endpoint to add user preferences
 @app.route('/user/<username>/preferences', methods=['GET'])
 def get_user_preferences(username):
@@ -971,10 +1081,31 @@ def update_user_preferences(username):
     if not isinstance(preferences, list):
         return jsonify({'error': 'Preferences must be a list'}), 400
     
+=======
+
+@socketio.on('restaurant_vote')
+def handle_restaurant_vote(data):
+    """Handle votes for restaurants during group selection"""
+    room = data.get('group_code')
+    restaurant_id = data.get('restaurant_id')
+    username = data.get('username')
+    liked = data.get('liked', False)
+    
+    if not all([room, restaurant_id, username]):
+        return
+    
+    print(f"User {username} {'liked' if liked else 'disliked'} restaurant {restaurant_id} in group {room}")
+    
+    # Forward vote to all members in the room
+    emit('restaurant_vote', data, room=room)
+    
+    # Store vote in database
+>>>>>>> main
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
+<<<<<<< HEAD
         # Validate user exists
         cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
         if not cursor.fetchone():
@@ -988,20 +1119,43 @@ def update_user_preferences(username):
             cursor.execute(
                 "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
                 (username, preference)
+=======
+        if liked:
+            # Store like in database (handle duplicates)
+            cursor.execute(
+                "INSERT IGNORE INTO user_restaurant (username, restaurant_id) VALUES (%s, %s)",
+                (username, restaurant_id)
+            )
+        else:
+            # Remove like if exists
+            cursor.execute(
+                "DELETE FROM user_restaurant WHERE username = %s AND restaurant_id = %s",
+                (username, restaurant_id)
+>>>>>>> main
             )
         
         conn.commit()
         
+<<<<<<< HEAD
         return jsonify({'message': 'Preferences updated successfully'}), 200
     
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
     
+=======
+        # Check if this vote created a match
+        check_for_restaurant_match(room, restaurant_id)
+        
+    except Exception as e:
+        print(f"Error handling restaurant vote: {e}")
+        conn.rollback()
+>>>>>>> main
     finally:
         cursor.close()
         conn.close()
 
+<<<<<<< HEAD
 # Endpoint to update user profile
 @app.route('/user/<username>/profile', methods=['POST'])
 def update_user_profile(username):
@@ -1010,11 +1164,139 @@ def update_user_profile(username):
     # Check for required fields
     if not data or not any(k in data for k in ('name', 'email')):
         return jsonify({'error': 'No profile data provided'}), 400
+=======
+def check_for_restaurant_match(group_code, restaurant_id):
+    """Check if all group members liked the same restaurant"""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Count total members in the group
+        cursor.execute(
+            "SELECT COUNT(*) as total_members FROM group_user WHERE group_code = %s",
+            (group_code,)
+        )
+        result = cursor.fetchone()
+        total_members = result['total_members']
+        
+        if total_members == 0:
+            return
+        
+        # Count users who liked this restaurant in this group
+        cursor.execute("""
+            SELECT COUNT(*) as likes_count 
+            FROM user_restaurant ur
+            JOIN group_user gu ON ur.username = gu.username
+            WHERE gu.group_code = %s AND ur.restaurant_id = %s
+        """, (group_code, restaurant_id))
+        
+        result = cursor.fetchone()
+        likes_count = result['likes_count']
+        
+        # If all members liked the restaurant, we have a match!
+        if likes_count == total_members:
+            print(f"MATCH FOUND! All {total_members} members in group {group_code} liked restaurant {restaurant_id}")
+            
+            # Get restaurant details
+            cursor.execute("SELECT name FROM restaurant WHERE restaurant_id = %s", (restaurant_id,))
+            restaurant = cursor.fetchone()
+            restaurant_name = restaurant['name'] if restaurant else "Unknown restaurant"
+            
+            # Emit match event to all group members
+            socketio.emit('restaurant_match', {
+                'restaurant_id': restaurant_id,
+                'restaurant_name': restaurant_name,
+                'message': f"Everyone liked {restaurant_name}!"
+            }, room=group_code)
+            
+            # Optionally, update group status to 'matched'
+            cursor.execute(
+                "UPDATE `group` SET status = 'matched' WHERE code = %s",
+                (group_code,)
+            )
+            conn.commit()
+            
+    except Exception as e:
+        print(f"Error checking for restaurant match: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+# Add endpoint to get restaurants for selection
+@app.route('/groups/<code>/restaurants', methods=['GET'])
+def get_group_restaurants(code):
+    """Get restaurants for a group to select from"""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Check if group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        group = cursor.fetchone()
+        
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        # For a real implementation, you would fetch restaurants based on group preferences
+        # Here, we'll just get all restaurants with their images
+        cursor.execute("""
+            SELECT r.*, 
+                   (SELECT COUNT(*) FROM user_restaurant ur 
+                    JOIN group_user gu ON ur.username = gu.username 
+                    WHERE ur.restaurant_id = r.restaurant_id AND gu.group_code = %s) as like_count
+            FROM restaurant r
+            LIMIT 10
+        """, (code,))
+        
+        restaurants = cursor.fetchall()
+        
+        # Get images for each restaurant
+        for restaurant in restaurants:
+            restaurant_id = restaurant['restaurant_id']
+            cursor.execute("SELECT url FROM photo WHERE restaurant_id = %s LIMIT 5", (restaurant_id,))
+            photos = cursor.fetchall()
+            restaurant['photos'] = [photo['url'] for photo in photos]
+            
+            # Get users who liked this restaurant
+            cursor.execute("""
+                SELECT ur.username 
+                FROM user_restaurant ur
+                JOIN group_user gu ON ur.username = gu.username
+                WHERE ur.restaurant_id = %s AND gu.group_code = %s
+            """, (restaurant_id, code))
+            
+            likes = cursor.fetchall()
+            restaurant['likes'] = [like['username'] for like in likes]
+            
+            # Convert decimal to float for JSON serialization
+            if 'rating' in restaurant:
+                restaurant['rating'] = float(restaurant['rating'])
+        
+        return jsonify({'restaurants': restaurants}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# Add endpoint to record match result
+@app.route('/groups/<code>/match', methods=['POST'])
+def record_group_match(code):
+    """Record the final restaurant match for a group"""
+    data = request.get_json()
+    
+    if 'restaurant_id' not in data:
+        return jsonify({'error': 'Missing restaurant_id'}), 400
+        
+    restaurant_id = data['restaurant_id']
+>>>>>>> main
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
+<<<<<<< HEAD
         # Validate user exists
         cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
         if not cursor.fetchone():
@@ -1054,5 +1336,31 @@ def update_user_profile(username):
         cursor.close()
         conn.close()
 
+=======
+        # Check if group exists
+        cursor.execute("SELECT * FROM `group` WHERE code = %s", (code,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Group not found'}), 404
+            
+        # Update group status to 'matched'
+        cursor.execute(
+            "UPDATE `group` SET status = 'matched' WHERE code = %s",
+            (code,)
+        )
+        
+        # Here you could record additional information about the match
+        # For example, store the match in a separate table
+        
+        conn.commit()
+        
+        return jsonify({'message': 'Match recorded successfully'}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+>>>>>>> main
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
