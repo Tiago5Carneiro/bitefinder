@@ -962,6 +962,27 @@ export default function GroupSelectionScreen() {
             >
               <ThemedText style={styles.buttonText}>Start Over</ThemedText>
             </TouchableOpacity>
+            {/* Add Home button */}
+            <TouchableOpacity
+              style={[styles.secondaryButton, { marginTop: 15 }]}
+              onPress={() => router.replace("/(tabs)")}
+            >
+              <ThemedView
+                style={{ flexDirection: "row", alignItems: "center" }}
+              >
+                <Ionicons
+                  name="home-outline"
+                  size={20}
+                  color={textColor}
+                  style={{ marginRight: 8 }}
+                />
+                <ThemedText
+                  style={[styles.secondaryButtonText, { color: textColor }]}
+                >
+                  Return to Home
+                </ThemedText>
+              </ThemedView>
+            </TouchableOpacity>
           </Animated.View>
         </ThemedView>
       </ThemedView>

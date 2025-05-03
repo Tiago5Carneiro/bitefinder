@@ -12,7 +12,7 @@ import sys
 import json
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
-sys.path.insert(0,"../src/vectorization/vectorization")
+sys.path.insert(0,"src/vectorization/")
 import vectorization as vect
 
 # Load environment variables
