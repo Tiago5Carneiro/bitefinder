@@ -287,6 +287,7 @@ async def websocket_handler(websocket):
         # First try to get from request_uri
         if hasattr(websocket, 'request_uri'):
             uri = websocket.request_uri
+            
         # Then try to get from path_and_query
         elif hasattr(websocket, 'path') and websocket.path:
             uri = websocket.path

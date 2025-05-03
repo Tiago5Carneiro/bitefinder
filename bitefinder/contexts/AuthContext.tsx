@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
+      console.log(data);
 
       // Store token and user data
       await AsyncStorage.setItem("userToken", data.token);
@@ -112,7 +113,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, name, email, password, place_preferences, food_preferences }),
+        body: JSON.stringify({
+          username,
+          name,
+          email,
+          password,
+          place_preferences,
+          food_preferences,
+        }),
       });
 
       if (!response.ok) {
