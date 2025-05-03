@@ -243,6 +243,25 @@ export default function GroupLobbyScreen() {
         }, 1500);
       }
     });
+    socket.on("selection_started", (data) => {
+      console.log("Selection started event received:", data);
+
+      // Mostrar toast de redirecionamento
+      setToast({
+        visible: true,
+        message: "Host started restaurant selection. Redirecting...",
+        type: "info",
+      });
+
+      // Pequeno atraso para o toast ser visível
+      setTimeout(() => {
+        // Navegar para a tela de seleção de restaurantes
+        router.push({
+          pathname: "/restaurant/group-selection",
+          params: { groupCode },
+        });
+      }, 1500);
+    });
   };
   // Update useEffect for currentUser dependency
   useEffect(() => {
@@ -460,43 +479,30 @@ export default function GroupLobbyScreen() {
     }
   };
 
-  // Add listener for WebSocket events
+  // Dentro do useEffect que contém os outros listeners
   useEffect(() => {
     if (socketRef.current) {
-      // Handle group_dissolved event
-      socketRef.current.on("group_dissolved", (data) => {
-        if (!isHost) {
-          // Show a toast notification
-          setToast({
-            visible: true,
-            message: data.message || "The group has been dissolved by the host",
-            type: "info",
+      // [outros listeners existentes]
+
+      // Listener para a inicialização da seleção de restaurantes
+      socketRef.current.on("selection_started", (data) => {
+        console.log("Selection started event received:", data);
+
+        // Mostrar toast de redirecionamento
+        setToast({
+          visible: true,
+          message: "Host started restaurant selection. Redirecting...",
+          type: "info",
+        });
+
+        // Pequeno atraso para o toast ser visível
+        setTimeout(() => {
+          // Navegar para a tela de seleção de restaurantes
+          router.push({
+            pathname: "/restaurant/group-selection",
+            params: { groupCode },
           });
-
-          // Delay navigation to allow toast to be seen
-          setTimeout(() => {
-            router.replace("/(tabs)");
-          }, 1500);
-        }
-      });
-
-      // Handle member_left event
-      socketRef.current.on("member_left", (data) => {
-        if (data && data.username) {
-          // Show toast notification about the member leaving
-          setToast({
-            visible: true,
-            message:
-              data.message ||
-              `${data.name || data.username} has left the group`,
-            type: "info",
-          });
-
-          // Toast will auto-dismiss after a few seconds
-          setTimeout(() => {
-            setToast({ visible: false, message: "", type: "info" });
-          }, 3000);
-        }
+        }, 1500);
       });
     }
 
@@ -505,9 +511,10 @@ export default function GroupLobbyScreen() {
         socketRef.current.off("group_dissolved");
         socketRef.current.off("member_left");
         socketRef.current.off("user_joined");
+        socketRef.current.off("selection_started"); // Adicionar este também para limpeza
       }
     };
-  }, [isHost, router]);
+  }, [isHost, router, groupCode]); // Adicione groupCode como dependência
   // Update renderMemberItem to safely handle undefined members
   const renderMemberItem = ({ item }: { item: Member }) => {
     // Add safety check for null or undefined item
