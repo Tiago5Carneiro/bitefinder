@@ -289,7 +289,7 @@ def register():
     data = request.get_json()
     
     # Basic validation
-    if not all(k in data for k in ('username', 'name', 'email', 'password')):
+    if not all(k in data for k in ('username', 'name', 'email', 'password','food-pref','place-pref')):
         return jsonify({'error': 'Missing required fields'}), 400
     
     username = data['username']
