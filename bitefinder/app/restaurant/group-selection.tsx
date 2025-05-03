@@ -12,7 +12,6 @@ import {
   Easing,
   View,
   ScrollView,
-  Linking,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,8 +21,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useThemeColor } from "@/hooks/useThemeColor";
 
-const API_URL_WS = "ws://localhost:8765";
 const API_URL = "http://localhost:5000";
+const WS_URL = "ws://localhost:8765"; // Standalone WebSocket server
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const SWIPE_THRESHOLD = 120;
@@ -45,13 +44,11 @@ export default function GroupSelectionScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [restaurants, setRestaurants] = useState<any[]>([]);
-  const [originalRestaurants, setOriginalRestaurants] = useState<any[]>([]);
   const [matchedRestaurant, setMatchedRestaurant] = useState<any | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [group, setGroup] = useState<any>(null);
   const [position] = useState(new Animated.ValueXY());
   const [localMatches, setLocalMatches] = useState<string[]>([]);
-  const [userToken, setUserToken] = useState<string | null>(null);
 
   // WebSocket reference
   const wsRef = useRef<WebSocket | null>(null);
@@ -79,68 +76,6 @@ export default function GroupSelectionScreen() {
     setTimeout(() => {
       setToast({ visible: false, message: "", type: "info" });
     }, duration);
-  };
-
-  // Function to load restaurants from API instead of using mocks
-  const loadRestaurants = async () => {
-    if (!groupCode || !userToken) return;
-
-    try {
-      setIsLoading(true);
-
-      // Make POST request to start restaurant selection
-      const response = await fetch(`${API_URL}/groups/${groupCode}/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${userToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to load restaurants");
-      }
-
-      const data = await response.json();
-
-      console.log(data);
-
-      if (data.restaurants && Array.isArray(data.restaurants)) {
-        // Transform restaurant data to match the format expected by the UI
-        const formattedRestaurants = data.restaurants.map(
-          (restaurant: any, index: number) => ({
-            id: restaurant.restaurant_id || `restaurant-${index}`,
-            name: restaurant.restaurant_name,
-            image:
-              restaurant.images && restaurant.images.length > 0
-                ? restaurant.images[0]
-                : "https://via.placeholder.com/500x300?text=No+Image",
-            cuisine: restaurant.summary
-              ? restaurant.summary.split(".")[0]
-              : "Restaurant",
-            rating: restaurant.rating,
-            priceRange: restaurant.price_level
-              ? "$".repeat(restaurant.price_level)
-              : "$$",
-            distance: restaurant.price_range || "Nearby",
-            url: restaurant.url,
-            summary: restaurant.summary,
-            likes: [],
-          })
-        );
-
-        setRestaurants(formattedRestaurants);
-        setOriginalRestaurants(formattedRestaurants);
-      } else {
-        throw new Error("No restaurants received from server");
-      }
-    } catch (error) {
-      console.error("Error loading restaurants:", error);
-      showToast(`Failed to load restaurants: ${error.message}`, "error");
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   // Function to check for local match
@@ -197,7 +132,7 @@ export default function GroupSelectionScreen() {
     }
 
     // Create WebSocket connection with auth token
-    const ws = new WebSocket(`${API_URL_WS}?token=${token}&group=${groupCode}`);
+    const ws = new WebSocket(`${WS_URL}?token=${token}&group=${groupCode}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -242,24 +177,19 @@ export default function GroupSelectionScreen() {
       case "selection_reset":
         console.log("Selection reset by server");
 
-        // Reset to original restaurants with empty likes
-        if (originalRestaurants.length > 0) {
-          const resetRestaurants = originalRestaurants.map((restaurant) => ({
-            ...restaurant,
-            likes: [],
-          }));
+        // Create a fresh copy of restaurants with empty likes
+        const resetRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+          ...restaurant,
+          likes: [],
+        }));
 
-          setRestaurants(resetRestaurants);
-          setLikedRestaurantIds([]);
-          setLocalMatches([]);
-          resetMatchAnimation();
-          setMatchedRestaurant(null);
-        } else {
-          // Fall back to reloading from API
-          loadRestaurants();
-        }
+        // Reset all states
+        setRestaurants(resetRestaurants);
+        setLikedRestaurantIds([]);
+        setLocalMatches([]);
+        resetMatchAnimation();
+        setMatchedRestaurant(null);
         break;
-
       case "restaurant_match":
         console.log("Received restaurant match from server:", data);
 
@@ -281,9 +211,7 @@ export default function GroupSelectionScreen() {
 
           // If not found in current list, look in original restaurants
           if (!matched) {
-            matched = originalRestaurants.find(
-              (r) => r.id === data.restaurant_id
-            );
+            matched = MOCK_RESTAURANTS.find((r) => r.id === data.restaurant_id);
           }
 
           if (matched) {
@@ -328,7 +256,6 @@ export default function GroupSelectionScreen() {
           }
         }
         break;
-
       case "restaurant_vote":
         console.log("Received restaurant vote:", data);
 
@@ -409,7 +336,6 @@ export default function GroupSelectionScreen() {
           });
         }
         break;
-
       case "group_dissolved":
         console.log("Received group_dissolved event:", data);
 
@@ -444,15 +370,14 @@ export default function GroupSelectionScreen() {
 
         // Get user data
         const userData = await AsyncStorage.getItem("userData");
-        const token = await AsyncStorage.getItem("userToken");
+        const userToken = await AsyncStorage.getItem("userToken");
 
-        if (!userData || !token) {
+        if (!userData || !userToken) {
           showToast("Please login first to continue", "error");
           router.replace("/(auth)/login");
           return;
         }
 
-        setUserToken(token);
         const user = JSON.parse(userData);
         setCurrentUser(user);
 
@@ -460,7 +385,7 @@ export default function GroupSelectionScreen() {
         const groupResponse = await fetch(`${API_URL}/groups/${groupCode}`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${userToken}`,
           },
         });
 
@@ -482,7 +407,7 @@ export default function GroupSelectionScreen() {
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${userToken}`,
             },
           }
         );
@@ -501,11 +426,14 @@ export default function GroupSelectionScreen() {
 
         setGroup(groupWithMembers);
 
-        // Load real restaurants from API instead of using mock data
-        await loadRestaurants();
+        // For demo using mock data
+        setTimeout(() => {
+          setRestaurants(MOCK_RESTAURANTS);
+          setIsLoading(false);
+        }, 1500);
 
         // Initialize WebSocket connection
-        initializeWebSocket(user.username, token);
+        initializeWebSocket(user.username, userToken);
       } catch (error) {
         console.error("Error loading data:", error);
         showToast("Failed to load selection data. Please try again.", "error");
@@ -547,10 +475,11 @@ export default function GroupSelectionScreen() {
     }
   };
 
-  // Improved checkForMatches function
+  // Melhorar a função checkForMatches para ser mais robusta
   const checkForMatches = () => {
     if (!group || !restaurants.length) return;
 
+    // Melhorar logs para depuração
     console.log("Checking for matches with group members:", group.members);
     console.log("Current user:", currentUser?.username);
 
@@ -559,7 +488,7 @@ export default function GroupSelectionScreen() {
 
     if (membersCount < 2) {
       console.log("Need at least 2 members for a match");
-      return;
+      return; // Precisamos de pelo menos 2 membros para um match
     }
 
     for (const restaurant of restaurants) {
@@ -568,19 +497,20 @@ export default function GroupSelectionScreen() {
         restaurant.likes
       );
 
-      // Check if all members liked
+      // Verificar se todos os membros ativos deram like
       if (
         restaurant.likes.length >= 2 &&
         restaurant.likes.length === membersCount
       ) {
         console.log(`🎯 MATCH FOUND for ${restaurant.name}!`);
 
+        // Resto do código para exibir o match...
         setShowMatchAnimation(true);
 
         setTimeout(() => {
           setMatchedRestaurant(restaurant);
 
-          // Start animations
+          // Animar...
           Animated.parallel([
             Animated.timing(matchScaleAnim, {
               toValue: 1,
@@ -603,7 +533,7 @@ export default function GroupSelectionScreen() {
             ]),
           ]).start();
 
-          // Notify server about match
+          // Notificar o servidor sobre o match
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(
               JSON.stringify({
@@ -633,7 +563,7 @@ export default function GroupSelectionScreen() {
     setShowMatchAnimation(false);
   };
 
-  // PanResponder for swipe gestures
+  // Configuração do PanResponder para os gestos de swipe
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderMove: (_, gesture) => {
@@ -697,33 +627,33 @@ export default function GroupSelectionScreen() {
       // Store this restaurant in a tracking array
       setLikedRestaurantIds((prev) => [...prev, currentRestaurant.id]);
 
-      // Clone current restaurant to avoid animation issues
+      // Importante: clone o restaurante atual para evitar problemas com animações
       const updatedRestaurant = {
         ...currentRestaurant,
         likes: [...currentRestaurant.likes, currentUser.username],
       };
 
-      // Update locally with current user's like
+      // Atualizar localmente o restaurante com o like do usuário atual
       setRestaurants((prevRestaurants) => {
         const updatedRestaurants = [...prevRestaurants];
         updatedRestaurants[0] = updatedRestaurant;
         return updatedRestaurants;
       });
 
-      // Quick local match check
+      // Verificação rápida de match localmente
       const localMatch = checkForLocalMatch(updatedRestaurant);
 
-      // If match, show immediately
+      // Se for um match, exibir imediatamente
       if (localMatch) {
-        // Register match locally to avoid duplication
+        // Registrar o match localmente para evitar duplicação
         setLocalMatches((prev) => [...prev, updatedRestaurant.id]);
 
-        // Show match animation
+        // Mostrar animação de match
         setTimeout(() => {
           setMatchedRestaurant(updatedRestaurant);
           setShowMatchAnimation(true);
 
-          // Start animations
+          // Iniciar animações
           Animated.parallel([
             Animated.timing(matchScaleAnim, {
               toValue: 1,
@@ -805,10 +735,69 @@ export default function GroupSelectionScreen() {
     extrapolate: "clamp",
   });
 
+  // Lista de restaurantes simulada - normalmente seria buscada da API
+  const MOCK_RESTAURANTS = [
+    {
+      id: "1",
+      name: "Sushi Paradise",
+      image:
+        "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Japanese",
+      rating: 4.5,
+      priceRange: "$$",
+      distance: "0.8 miles",
+      likes: [],
+    },
+    {
+      id: "2",
+      name: "Burger Joint",
+      image:
+        "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "American",
+      rating: 4.2,
+      priceRange: "$",
+      distance: "1.2 miles",
+      likes: [],
+    },
+    {
+      id: "3",
+      name: "Pasta Palace",
+      image:
+        "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Italian",
+      rating: 4.7,
+      priceRange: "$$$",
+      distance: "2.1 miles",
+      likes: [],
+    },
+    {
+      id: "4",
+      name: "Taco Fiesta",
+      image:
+        "https://images.unsplash.com/photo-1552332386-f8dd00dc2f85?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Mexican",
+      rating: 4.1,
+      priceRange: "$",
+      distance: "0.6 miles",
+      likes: [],
+    },
+    {
+      id: "5",
+      name: "Golden Dragon",
+      image:
+        "https://images.unsplash.com/photo-1563245372-f21724e3856d?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60",
+      cuisine: "Chinese",
+      rating: 4.3,
+      priceRange: "$$",
+      distance: "1.5 miles",
+      likes: [],
+    },
+  ];
+
   const shareGroupCode = () => {
     Alert.alert(
       "Share Group Code",
-      `Share this code with your friends: ${groupCode}`,
+      `Share this code with your friends: ${group.id}`,
       [{ text: "OK" }]
     );
   };
@@ -873,7 +862,6 @@ export default function GroupSelectionScreen() {
               },
             ]}
           >
-            {/* Match content remains the same */}
             <ThemedView style={styles.matchBadge}>
               <Ionicons name="checkmark-circle" size={28} color="#4ECDC4" />
               <ThemedText type="title" style={styles.matchTitle}>
@@ -924,53 +912,57 @@ export default function GroupSelectionScreen() {
               <ThemedView style={styles.matchDetailRow}>
                 <Ionicons name="cash-outline" size={18} color={textColor} />
                 <ThemedText style={styles.restaurantDetails}>
-                  {matchedRestaurant.priceRange}
+                  {matchedRestaurant.priceRange} price range
                 </ThemedText>
               </ThemedView>
 
-              {matchedRestaurant.url && (
-                <TouchableOpacity
-                  style={[
-                    styles.button,
-                    { backgroundColor: tintColor, marginTop: 15 },
-                  ]}
-                  onPress={() => {
-                    // Record match to server
-                    fetch(`${API_URL}/match/${currentUser.username}`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${userToken}`,
-                      },
-                      body: JSON.stringify({
-                        restaurant_id: matchedRestaurant.id,
-                      }),
-                    }).catch((err) =>
-                      console.error("Error recording match:", err)
-                    );
-
-                    // Open the URL
-                    Linking.openURL(matchedRestaurant.url);
-                  }}
-                >
-                  <ThemedText style={styles.buttonText}>
-                    View in Maps
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
+              <ThemedView style={styles.matchDetailRow}>
+                <Ionicons name="location-outline" size={18} color={textColor} />
+                <ThemedText style={styles.restaurantDetails}>
+                  {matchedRestaurant.distance} away
+                </ThemedText>
+              </ThemedView>
             </ThemedView>
 
-            {/* Existing buttons */}
             <TouchableOpacity
               style={[
                 styles.button,
                 { backgroundColor: tintColor, marginTop: 30 },
               ]}
-              onPress={() => loadRestaurants()}
+              onPress={() => {
+                // Clear liked restaurant IDs
+                setLikedRestaurantIds([]);
+
+                // Clear local matches tracking
+                setLocalMatches([]);
+
+                // Create a fresh copy of the mock restaurants with empty likes arrays
+                const freshRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+                  ...restaurant,
+                  likes: [],
+                }));
+
+                // Set the fresh restaurants
+                setRestaurants(freshRestaurants);
+
+                // Tell the server to reset the selection for this group
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(
+                    JSON.stringify({
+                      type: "reset_selection",
+                      data: {
+                        group_code: groupCode,
+                        username: currentUser?.username,
+                        name: currentUser?.name || currentUser?.username,
+                      },
+                    })
+                  );
+                }
+              }}
             >
               <ThemedText style={styles.buttonText}>Start Over</ThemedText>
             </TouchableOpacity>
-
+            {/* Add Home button */}
             <TouchableOpacity
               style={[styles.secondaryButton, { marginTop: 15 }]}
               onPress={() => router.replace("/(tabs)")}
@@ -1045,7 +1037,22 @@ export default function GroupSelectionScreen() {
 
         <TouchableOpacity
           style={[styles.button, { backgroundColor: tintColor, marginTop: 30 }]}
-          onPress={loadRestaurants}
+          onPress={() => {
+            // Clear liked restaurant IDs
+            setLikedRestaurantIds([]);
+
+            // Clear local matches tracking
+            setLocalMatches([]);
+
+            // Create a fresh copy of the mock restaurants with empty likes arrays
+            const freshRestaurants = MOCK_RESTAURANTS.map((restaurant) => ({
+              ...restaurant,
+              likes: [],
+            }));
+
+            // Set the fresh restaurants
+            setRestaurants(freshRestaurants);
+          }}
         >
           <ThemedText style={styles.buttonText}>Start Over</ThemedText>
         </TouchableOpacity>
@@ -1111,7 +1118,7 @@ export default function GroupSelectionScreen() {
               styles.progressFill,
               {
                 width: `${
-                  100 - (restaurants.length / restaurants.length) * 100
+                  100 - (restaurants.length / MOCK_RESTAURANTS.length) * 100
                 }%`,
                 backgroundColor: tintColor,
               },
@@ -1119,8 +1126,8 @@ export default function GroupSelectionScreen() {
           />
         </ThemedView>
         <ThemedText style={styles.progressText}>
-          {restaurants.length - restaurants.length}/{restaurants.length}{" "}
-          restaurants reviewed
+          {MOCK_RESTAURANTS.length - restaurants.length}/
+          {MOCK_RESTAURANTS.length} restaurants reviewed
         </ThemedText>
       </ThemedView>
 
