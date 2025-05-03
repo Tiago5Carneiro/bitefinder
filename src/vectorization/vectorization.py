@@ -216,7 +216,7 @@ def average_embedding(embeddings):
     len_embeddings = len(embeddings[0])
     if len_embeddings == 1 :
         return embeddings
-    for x in range():
+    for x in range(len_embeddings):
         average_embedding.append(sum([embedding[x] for embedding in embeddings]) / len(embeddings))
 
     return average_embedding
