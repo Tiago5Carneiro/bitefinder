@@ -8,12 +8,14 @@ import {
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL = "http://localhost:5000/"; // Use your server IP address
+const API_URL = "http://localhost:5000/";
 
 type User = {
   username: string;
   name: string;
   email: string;
+  food_preferences: string[];
+  place_preferences: string[];
 };
 
 type AuthContextType = {
@@ -24,7 +26,9 @@ type AuthContextType = {
     username: string,
     name: string,
     email: string,
-    password: string
+    password: string,
+    food_preferences: string[],
+    place_preferences: string[]
   ) => Promise<void>;
   signOut: () => void;
 };
@@ -97,7 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     username: string,
     name: string,
     email: string,
-    password: string
+    password: string,
+    place_preferences: string[],
+    food_preferences: string[]
   ) => {
     setIsLoading(true);
     try {
@@ -106,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, name, email, password }),
+        body: JSON.stringify({ username, name, email, password, place_preferences, food_preferences }),
       });
 
       if (!response.ok) {

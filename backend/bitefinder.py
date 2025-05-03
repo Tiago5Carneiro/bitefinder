@@ -36,6 +36,7 @@ def drop_all_tables():
     cursor = conn.cursor()
     
     try:
+        cursor.execute("DROP TABLE IF EXISTS user_preference")
         cursor.execute("DROP TABLE IF EXISTS user_restaurant")
         cursor.execute("DROP TABLE IF EXISTS restaurant_image")
         cursor.execute("DROP TABLE IF EXISTS group_user")
@@ -55,8 +56,7 @@ def drop_all_tables():
         cursor.close()
         conn.close()
 # Uncomment the line below to drop all tables before initializing
-#drop_all_tables()
-
+# drop_all_tables()
 
 def init_db():
     """Initialize database tables if they don't exist"""
@@ -280,6 +280,9 @@ def register():
     email = data['email']
     password = data['password']
     
+    place_preferences = data.get('place_preferences', [])
+    food_preferences = data.get('food_preferences', [])
+    
     # Hash the password
     hashed_password = hash_password(password)
     
@@ -297,6 +300,18 @@ def register():
             "INSERT INTO user (username, name, password, email) VALUES (%s, %s, %s, %s)",
             (username, name, hashed_password, email)
         )
+        for place_preference in place_preferences:
+            cursor.execute(
+                "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
+                (username, place_preference)
+            )
+        
+        for food_preference in food_preferences:
+            cursor.execute(
+                "INSERT INTO user_preference (username, preference) VALUES (%s, %s)",
+                (username, food_preference)
+            )
+
         conn.commit()
         
         return jsonify({'message': 'User registered successfully'}), 201
@@ -332,7 +347,13 @@ def login():
         
         if not user or not verify_password(user['password'], password):
             return jsonify({'error': 'Invalid credentials'}), 401
-        
+
+        cursor.execute(
+            "SELECT preference FROM user_preference WHERE username = %s",
+            (user['username'],)
+        )
+        preferences = [row['preference'] for row in cursor.fetchall()]
+
         # Generate token
         token = generate_token(user['username'])
         
@@ -341,10 +362,11 @@ def login():
             'user': {
                 'username': user['username'],
                 'name': user['name'],
-                'email': user['email']
+                'email': user['email'],
+                'preferences': preferences
             }
         }), 200
-    
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
@@ -410,7 +432,6 @@ def create_group():
         conn.close()
 
 # Update the join_group route
-
 @app.route('/groups/join', methods=['POST'])
 def join_group():
     data = request.get_json()
@@ -492,6 +513,37 @@ def join_group():
     
     except Exception as e:
         conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint to get user info and preferences
+@app.route('/user/<username>', methods=['GET'])
+def get_user(username):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get user info
+        cursor.execute("SELECT username, name, email FROM user WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Get user preferences
+        cursor.execute(
+            "SELECT preference FROM user_preference WHERE username = %s",
+            (username,)
+        )
+        preferences = [row['preference'] for row in cursor.fetchall()]
+        user['preferences'] = preferences
+        
+        return jsonify({'user': user}), 200
+    
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
     
     finally:
@@ -604,6 +656,14 @@ def get_users():
         cursor.execute("SELECT username, name, email FROM user")
         users = cursor.fetchall()
         
+        for user in users:
+            cursor.execute(
+                "SELECT preference FROM user_preference WHERE username = %s",
+                (user['username'],)
+            )
+            preferences = [row['preference'] for row in cursor.fetchall()]
+            user['preferences'] = preferences
+
         return jsonify({'users': users}), 200
     
     except Exception as e:
@@ -977,6 +1037,46 @@ def start_restaurant_selection(code):
         cursor.close()
         conn.close()
 
+# Endpoint to add user preferences
+@app.route('/user/<username>/preferences', methods=['GET'])
+def get_user_preferences(username):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Validate user exists
+        cursor.execute("SELECT username FROM user WHERE username = %s", (username,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'User not found'}), 404
+        
+        cursor.execute(
+            "SELECT preference FROM user_preference WHERE username = %s",
+            (username,)
+        )
+        
+        preferences = [row['preference'] for row in cursor.fetchall()]
+        
+        return jsonify({'preferences': preferences}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# Endpoint to update user preferences
+@app.route('/user/<username>/preferences', methods=['POST'])
+def update_user_preferences(username):
+    data = request.get_json()
+    
+    if 'preferences' not in data:
+        return jsonify({'error': 'Missing preferences'}), 400
+    
+    preferences = data['preferences']
+    if not isinstance(preferences, list):
+        return jsonify({'error': 'Preferences must be a list'}), 400
+    
 
 @socketio.on('restaurant_vote')
 def handle_restaurant_vote(data):
@@ -1024,6 +1124,14 @@ def handle_restaurant_vote(data):
         cursor.close()
         conn.close()
 
+# Endpoint to update user profile
+@app.route('/user/<username>/profile', methods=['POST'])
+def update_user_profile(username):
+    data = request.get_json()
+    
+    # Check for required fields
+    if not data or not any(k in data for k in ('name', 'email')):
+        return jsonify({'error': 'No profile data provided'}), 400
 def check_for_restaurant_match(group_code, restaurant_id):
     """Check if all group members liked the same restaurant"""
     conn = get_db_connection()
