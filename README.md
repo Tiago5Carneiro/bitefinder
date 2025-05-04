@@ -1,33 +1,49 @@
-# shiftappens-25
+# 🍽️ BiteFinder
 
-## Problem
+A Tinder-style app that helps you and your friends decide where to eat. AI-driven, BiteFinder adapts suggestions to both individual and group preferences.
 
-You’re out with friends and no one can agree on where to eat. Suggestions get tossed around, but you end up going nowhere.
+## 📱 Features
 
-## Solution
+- **Personalized Profiles**: Specify your culinary tastes and dietary restrictions.  
+- **Friend Groups**: Create a “bite group” and invite friends to decide together.  
+- **AI-Powered Recommendations**: Combine user preferences and local options for ideal restaurant suggestions.  
+- **Group Swipe**: Tinder-like interface for exploring options until everyone agrees.  
+- **Culinary Match**: When all members swipe right on the same restaurant, it’s a match!
 
-Enter BiteFinder – the group dining decision‑maker:
+## ⚙️ How It Works
 
-- Sign Up & Set Preferences
+- **Data Acquisition & Vectorization**  
+  Restaurants are fetched via the Google Places API → parsed to structured text with Gemini → converted into feature vectors with Mistral.  
 
-  - Each friend creates a profile and indicates favorite cuisines and dietary restrictions.
+- **Individual Profile**  
+  User preferences follow the same flow as restaurant data—structured by Gemini, then vectorized by Mistral into individual “ideal restaurant” vectors.  
 
-  - Create a Group
+- **Group Vector**  
+  Individual vectors are aggregated into a single group representation of the collective ideal.  
 
-- Invite your crew into a shared “bite group.”
+- **Matching & Swipe**  
+  The group vector is compared against our restaurant vectors; top matches are presented in a swipe interface, and when everyone swipes right on a restaurant, it’s confirmed as the group’s choice.
 
-  - AI‑Powered Recommendations
+## 🛠️ Technologies
 
-      BiteFinder’s AI (leveraging Gemini, Mistral and the OpenAI API) combines everyone’s tastes, your dining history and local options from Google Places to produce a shortlist of the best nearby restaurants.
+- **Frontend**: React Native & Expo  
+- **Backend**: Python with Gemini and Mistral via the OpenAI API  
+- **Database**: SingleStore (cloud)  
+- **External APIs**: Google Places API  
 
-  - Match & Go
 
-      - Once the group agrees on a pick, you have your plan - and a tasty new spot to try!
+## 🚀 Installation
 
-## Technologies Used
+```bash
+# Clone the repository
+git clone https://github.com/Tiago5Carneiro/bitefinder
 
-- Front‑End: React Native & Expo
+# Navigate to the directory
+cd bitefinder
 
-- Back‑End: Python • Gemini • Mistral • OpenAI API • Google Places API
+# Install dependencies
+npm install
 
-- Database: SingleStore (cloud)
+# Start the application
+npm start
+```
