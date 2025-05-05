@@ -28,7 +28,7 @@
 Restaurants are fetched via the Google Places API → parsed to structured text with Gemini → converted into feature vectors with Mistral.  
 
 - **Individual Profile**  
-User preferences follow the same flow as restaurant data—structured by Gemini, then vectorized by Mistral into individual “ideal restaurant” vectors.  
+User preferences follow the same flow as restaurant data — structured by Gemini, then vectorized by Mistral into individual “ideal restaurant” vectors.  
 
 - **Group Vector**  
 Individual vectors are aggregated into a single group representation of the collective ideal.  
@@ -61,7 +61,7 @@ cd bitefinder
 npm install
 
 # Start the application
-npm start
+npm run web
 ```
 
 ```bash
