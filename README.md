@@ -5,7 +5,7 @@
 <p align="center"> <em>A Tinder-style app that helps you and your friends decide where to eat.<br> AI-driven, BiteFinder adapts suggestions to both individual and group preferences.</em> </p>
 
 <p align="center">
-  <img src="./assets/demo-files.png" alt="BiteFinder App Screenshots" width="600">
+  <img src="./assets/demo-files.png" alt="BiteFinder App Screenshots" width="800">
 </p>
 
 
@@ -13,13 +13,12 @@
 ## 📱 Features
 
 - **Personalized Profiles**: Set the vibe and food traits you're craving - like rural, lively, spicy, or crunchy.
-  <p align="center"> <img src="./assets/register.gif" alt="Match Demo" width="150"/> </p>  
 - **Friend Groups**: Create a “bite group” and invite friends to decide together.  
 - **AI-Powered Recommendations**: Combine user preferences and local options for ideal restaurant suggestions.  
 - **Group Swipe**: Tinder-like interface for exploring options until everyone agrees.  
 - **Culinary Match**: When all members swipe right on the same restaurant, it’s a match!
 
-<p align="center"> <img src="./assets/group.png" alt="Match Demo" width="430" /></p>  
+<p align="center"> <img src="./assets/group.png" alt="Match Demo" width="630" /></p>  
 
 
 
@@ -38,7 +37,7 @@ Individual vectors are aggregated into a single group representation of the coll
 The group vector is compared against our restaurant vectors; top matches are presented in a swipe interface, and when everyone swipes right on a restaurant, it’s confirmed as the group’s choice.
 
   <p align="center">
-  <img src="./assets/match.gif" alt="Match Demo" width="400" />
+  <img src="./assets/match.gif" alt="Match Demo" width="600" />
   </p>
 
 
