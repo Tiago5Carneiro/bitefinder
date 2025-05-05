@@ -12,15 +12,15 @@
 
 ## 📱 Features
 
-  <p align="center">
-  <img src="./assets/register.gif" alt="Match Demo" width="150" />
-  </p>
-
 - **Personalized Profiles**: Set the vibe and food traits you're craving - like rural, lively, spicy, or crunchy.
 - **Friend Groups**: Create a “bite group” and invite friends to decide together.  
 - **AI-Powered Recommendations**: Combine user preferences and local options for ideal restaurant suggestions.  
 - **Group Swipe**: Tinder-like interface for exploring options until everyone agrees.  
 - **Culinary Match**: When all members swipe right on the same restaurant, it’s a match!
+
+<p align="center"> <img src="./assets/register.gif" alt="Match Demo" width="150" style="margin-right:70px;margin-bottom:30px"/>  <img src="./assets/group.png" alt="Match Demo" width="430" /></p>  
+
+
 
 ## ⚙️ How It Works
 
